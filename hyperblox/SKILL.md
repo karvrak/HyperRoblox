@@ -44,10 +44,35 @@ hyperblox/<slug>/
 
 ### 1. Cadrer
 
-Entrées : une **image** (ou description), un **nom**, et si possible une
-**taille cible en studs**. Si la taille manque, la déduire de l'échelle Roblox
+Entrées : un **nom**, si possible une **taille cible en studs**, et l'une des
+trois sources de référence :
+
+1. **Une image fournie** par l'utilisateur → l'utiliser directement.
+2. **Un texte seul** → modéliser depuis la description (silhouette → masses →
+   détails, cf. style-lowpoly), en l'annonçant. C'est aussi le repli si la
+   génération IA (cas 3) échoue ou n'est pas configurée.
+3. **Texte + génération d'image IA** (si `config.json` du skill existe — voir
+   § Génération d'image de référence par IA) : générer une image de référence,
+   la montrer à l'utilisateur, puis modéliser depuis cette image.
+
+Si la taille manque, la déduire de l'échelle Roblox
 (personnage ≈ 5 studs) et l'annoncer. Si l'image contient plusieurs objets,
 demander lesquels modéliser — un modèle = un dossier.
+
+**Questions à poser d'emblée** (une seule salve, avant de modéliser — sauter
+celles auxquelles la demande répond déjà) :
+
+1. **Livrable** : itérer sur la préview HTML seule d'abord, ou construire dans
+   Studio dès la première validation ? (build.lua est généré dans tous les cas,
+   mais ne proposer son exécution que si l'utilisateur veut construire —
+   beaucoup préfèrent plusieurs allers-retours de préview avant.)
+2. **Style** : low-poly studio (défaut, rapide) ou plus détaillé/réaliste
+   (budget de parts élevé, plus de passes d'itération) ?
+3. **Animations** : si l'utilisateur n'en a pas demandé, lui demander s'il en
+   veut une — réponse libre attendue : « non » ou la description de ce qui doit
+   bouger. S'il en veut (ou en a déjà demandé) : préciser lesquelles et comment
+   elles seront déclenchées en jeu.
+4. **Taille cible en studs** si non déductible.
 
 Si le modèle doit s'animer (porte, couvercle, hélice…) : la pose de base est
 **l'état au repos** (fermé), et chaque pièce mobile doit être un **groupe**
@@ -119,9 +144,49 @@ Toute retouche (« le toit plus foncé », « la serrure plus grosse ») = édit
 `model.json` → regénérer → re-screenshot → re-valider si le changement est
 significatif → réexécuter `build.lua` (il remplace l'ancien modèle).
 
+## Génération d'image de référence par IA (optionnel)
+
+Le skill peut générer lui-même l'image de référence depuis un prompt texte, via
+une API d'images **compatible OpenAI** (`POST {baseUrl}/images/generations`) :
+OpenAI (`gpt-image-1`, `dall-e-3`) ou tout fournisseur compatible (Together,
+xAI, fal…) en changeant `baseUrl`.
+
+**Configuration** : copier `config.example.json` vers `config.json` (même
+dossier que ce SKILL.md) et renseigner :
+
+```json
+{ "imageGen": { "baseUrl": "https://api.openai.com/v1",
+                "apiKey": "sk-…", "model": "gpt-image-1", "size": "1024x1024" } }
+```
+
+`config.json` contient un secret : ne jamais le committer, ne jamais afficher
+la clé en clair dans une réponse.
+
+**Usage** :
+
+```powershell
+node .claude/skills/hyperblox/scripts/genimage.mjs hyperblox/<slug> "<prompt>" [--name reference.png] [--size 1024x1024]
+```
+
+→ sauvegarde `hyperblox/<slug>/reference.png`, à lire et valider avec
+l'utilisateur avant de modéliser (c'est ensuite une image source normale,
+à référencer dans `source_image`).
+
+Conseils de prompt pour une référence modélisable : **un seul objet, vue de
+trois quarts ou de profil, fond neutre uni**, style simple et lisible.
+
+Logique de décision :
+- L'utilisateur demande explicitement la génération IA → l'utiliser (erreur
+  claire s'il manque `config.json`).
+- Texte seul et `config.json` présent → proposer les deux options (génération
+  ou modélisation directe) ; en cas de doute, modélisation directe.
+- Échec API (clé invalide, quota, réseau) → le signaler et retomber sur la
+  modélisation directe depuis le texte.
+
 ## Rappels
 
 - Répondre en français, noms de parts lisibles (français ou anglais, cohérents).
 - Le viewer est autonome (Three.js inliné) : aucun serveur, aucun réseau requis.
 - Grands ensembles (une zone, une map) : hors périmètre — HyperBlox fait des
-  **modèles/props**, pas du level design de maps entières.
+  **modèles/props** ; pour le level design, rester sur les scripts de zone
+  existants (`generate_zone*.lua`) et le skill `roblox-game`.

@@ -1,0 +1,9 @@
+{
+  "_comment": "Copier ce fichier vers config.json (même dossier) et renseigner apiKey + model. config.json contient un secret : ne pas le committer, ne pas l'afficher en clair. baseUrl OpenAI-compatible (…/v1) ou https://openrouter.ai/api/v1 (dialecte chat/completions géré automatiquement).",
+  "imageGen": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "sk-VOTRE-CLE-ICI",
+    "model": "gpt-image-1",
+    "size": "1024x1024"
+  }
+}

@@ -8,3 +8,6 @@ node_modules/
 # fichiers temporaires
 *.log
 *.tmp
+
+# secret local (cle API generation d'images)
+hyperblox/config.json

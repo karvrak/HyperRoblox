@@ -60,7 +60,20 @@ couvercle fermé). L'état ouvert/déployé est une animation, pas la pose de ba
 - Rotation continue : keyframe finale à `[0, 0, -360]` (ou multiple) +
   `loop: true`.
 
-## Recettes
+## Rythme : penser « échelle Roblox », pas « préview »
+
+Le player Lua joue en temps réel exactement les durées du JSON — si ça paraît
+trop rapide en jeu, c'est que le cycle est trop court, pas que Roblox accélère.
+Un cycle court paraît toujours plus frénétique sur un gros modèle vu de loin
+dans Studio que dans la petite préview :
+
+- **Cycles locomotion/marche** : 1.8 à 2.5 s minimum pour un modèle de la
+  taille d'un véhicule ; < 1.5 s = effet cartoon speed.
+- **Gestes** (coup de sabre, mâchoire) : le geste lui-même peut être rapide
+  (0.3-0.5 s) mais l'entourer de temps morts dans la boucle (ex. 1 coup par
+  seconde, pas 3).
+- Ajustable sans regénérer : `anim.play("X", { speed = 0.5 })` côté Lua, et
+  le scrubber de la préview pour juger image par image.
 
 | Effet | Recette |
 |---|---|
