@@ -1,0 +1,158 @@
+{
+  "name": "CoffreAuTresor",
+  "description": "Exemple HyperBlox : coffre au trésor low-poly studio (Block + Wedge + Cylinder, groupes, rotations, animation de couvercle).",
+  "parts": [
+    {
+      "name": "Caisse",
+      "group": "Caisse",
+      "shape": "Block",
+      "size": [4, 2.2, 2.6],
+      "position": [0, 1.1, 0],
+      "color": [121, 85, 58],
+      "material": "SmoothPlastic"
+    },
+    {
+      "name": "BandeGauche",
+      "group": "Caisse",
+      "shape": "Block",
+      "size": [0.5, 2.3, 2.7],
+      "position": [-1.2, 1.15, 0],
+      "color": [72, 74, 80],
+      "material": "Metal"
+    },
+    {
+      "name": "BandeDroite",
+      "group": "Caisse",
+      "shape": "Block",
+      "size": [0.5, 2.3, 2.7],
+      "position": [1.2, 1.15, 0],
+      "color": [72, 74, 80],
+      "material": "Metal"
+    },
+    {
+      "name": "PoigneeGauche",
+      "group": "Caisse",
+      "shape": "Cylinder",
+      "size": [0.8, 0.3, 0.3],
+      "position": [-2.15, 1.5, 0],
+      "rotation": [0, 90, 0],
+      "color": [212, 175, 55],
+      "material": "Metal"
+    },
+    {
+      "name": "PoigneeDroite",
+      "group": "Caisse",
+      "shape": "Cylinder",
+      "size": [0.8, 0.3, 0.3],
+      "position": [2.15, 1.5, 0],
+      "rotation": [0, 90, 0],
+      "color": [212, 175, 55],
+      "material": "Metal"
+    },
+    {
+      "name": "Couvercle",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [4.2, 0.5, 2.8],
+      "position": [0, 2.45, 0],
+      "color": [98, 66, 44],
+      "material": "SmoothPlastic"
+    },
+    {
+      "name": "CouvercleHaut",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [4.2, 0.5, 1.6],
+      "position": [0, 2.95, 0],
+      "color": [98, 66, 44],
+      "material": "SmoothPlastic"
+    },
+    {
+      "name": "PenteAvant",
+      "group": "Couvercle",
+      "shape": "Wedge",
+      "size": [4.2, 0.5, 0.6],
+      "position": [0, 2.95, -1.1],
+      "color": [98, 66, 44],
+      "material": "SmoothPlastic"
+    },
+    {
+      "name": "PenteArriere",
+      "group": "Couvercle",
+      "shape": "Wedge",
+      "size": [4.2, 0.5, 0.6],
+      "position": [0, 2.95, 1.1],
+      "rotation": [0, 180, 0],
+      "color": [98, 66, 44],
+      "material": "SmoothPlastic"
+    },
+    {
+      "name": "BandeCouvercleGauche",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [0.5, 0.55, 2.85],
+      "position": [-1.2, 2.45, 0],
+      "color": [72, 74, 80],
+      "material": "Metal"
+    },
+    {
+      "name": "BandeCouvercleDroite",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [0.5, 0.55, 2.85],
+      "position": [1.2, 2.45, 0],
+      "color": [72, 74, 80],
+      "material": "Metal"
+    },
+    {
+      "name": "Serrure",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [0.8, 0.7, 0.25],
+      "position": [0, 2.35, -1.5],
+      "color": [212, 175, 55],
+      "material": "Metal"
+    },
+    {
+      "name": "TrouSerrure",
+      "group": "Couvercle",
+      "shape": "Block",
+      "size": [0.3, 0.3, 0.1],
+      "position": [0, 2.3, -1.62],
+      "color": [40, 32, 20],
+      "material": "SmoothPlastic"
+    }
+  ],
+  "animations": [
+    {
+      "name": "Ouvrir",
+      "duration": 1.0,
+      "tracks": [
+        {
+          "target": "Couvercle",
+          "pivot": [0, 2.2, 1.3],
+          "keyframes": [
+            { "t": 0, "rotation": [0, 0, 0], "easing": "easeOutBack" },
+            { "t": 1.0, "rotation": [75, 0, 0] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fermer",
+      "duration": 0.7,
+      "tracks": [
+        {
+          "target": "Couvercle",
+          "pivot": [0, 2.2, 1.3],
+          "keyframes": [
+            { "t": 0, "rotation": [75, 0, 0], "easing": "easeIn" },
+            { "t": 0.5, "rotation": [0, 0, 0], "easing": "easeOut" },
+            { "t": 0.6, "rotation": [6, 0, 0], "easing": "easeInOut" },
+            { "t": 0.7, "rotation": [0, 0, 0] }
+          ]
+        }
+      ]
+    }
+  ]
+}

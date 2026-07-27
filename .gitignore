@@ -1,0 +1,10 @@
+# OS
+Thumbs.db
+.DS_Store
+
+# Node (le skill n'a aucune dépendance, mais au cas où)
+node_modules/
+
+# fichiers temporaires
+*.log
+*.tmp

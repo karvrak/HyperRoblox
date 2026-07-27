@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>__MODEL_NAME__ — HyperBlox Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
+  #scene { position: fixed; inset: 0; display: block; }
+  .panel {
+    position: fixed; top: 16px; left: 16px; z-index: 10;
+    background: rgba(28, 30, 34, 0.88); color: #e8eaed;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 14px 16px; min-width: 220px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  .panel h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; letter-spacing: 0.2px; }
+  .panel .sub { font-size: 12px; color: #9aa0a6; margin-bottom: 10px; }
+  .panel .dims { font-size: 12px; color: #c7cbd1; font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btnrow button {
+    background: rgba(255,255,255,0.08); color: #e8eaed; border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  .btnrow button:hover { background: rgba(255,255,255,0.16); }
+  .btnrow button.active { background: #2f6fed; border-color: #2f6fed; }
+  #animbox { display: none; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; }
+  #animbox .row { display: flex; gap: 6px; margin-bottom: 8px; }
+  #animbox select {
+    flex: 1; background: rgba(255,255,255,0.08); color: #e8eaed;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 4px 6px; font-size: 12px;
+  }
+  #animbox select option { background: #1c1e22; }
+  #a-scrub { width: 100%; accent-color: #2f6fed; }
+  .hint {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+    background: rgba(28,30,34,0.75); color: #b7bcc3; font-size: 12px;
+    border-radius: 999px; padding: 6px 14px; pointer-events: none; white-space: nowrap;
+  }
+  .brand {
+    position: fixed; bottom: 14px; right: 16px; z-index: 10;
+    color: rgba(20,24,30,0.55); font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    pointer-events: none; text-transform: uppercase;
+  }
+  #chip {
+    position: fixed; top: 16px; right: 16px; z-index: 10; display: none;
+    background: rgba(28,30,34,0.88); color: #e8eaed;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    padding: 12px 14px; min-width: 200px; backdrop-filter: blur(6px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35); font-size: 12px; line-height: 1.7;
+  }
+  #chip .name { font-size: 14px; font-weight: 700; }
+  #chip .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(255,255,255,0.25); }
+  #chip .muted { color: #9aa0a6; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div class="panel">
+  <h1 id="p-name"></h1>
+  <div class="sub" id="p-count"></div>
+  <div class="dims" id="p-dims"></div>
+  <div class="btnrow">
+    <button id="b-grid" class="active" title="G">Grille</button>
+    <button id="b-wire" title="F">Filaire</button>
+    <button id="b-spin" title="R">Rotation</button>
+    <button id="b-center" title="C">Recentrer</button>
+  </div>
+  <div id="animbox">
+    <div class="row">
+      <select id="a-select"></select>
+      <button id="a-play" title="Espace">▶</button>
+      <button id="a-loop" title="Boucle">⟳</button>
+    </div>
+    <input id="a-scrub" type="range" min="0" max="1" step="0.001" value="0">
+    <div id="a-time" class="sub" style="margin:4px 0 0;"></div>
+  </div>
+</div>
+<div id="chip"></div>
+<div class="hint">glisser : orbite &nbsp;·&nbsp; molette : zoom &nbsp;·&nbsp; clic droit : déplacer &nbsp;·&nbsp; clic : inspecter une part</div>
+<div class="brand">HyperBlox</div>
+
+<script>/*__THREE_JS__*/</script>
+<script>
+"use strict";
+const MODEL = __MODEL_JSON__;
+
+/* ---------------------------------------------------------------- scène */
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xa8cdf0);          // ciel Roblox clair
+scene.fog = new THREE.Fog(0xa8cdf0, 220, 520);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+
+/* lumières façon Studio */
+scene.add(new THREE.HemisphereLight(0xd7e7ff, 0x8a8f7a, 0.75));
+const sun = new THREE.DirectionalLight(0xfff3e0, 1.15);
+sun.position.set(40, 80, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+/* baseplate + grille (1 stud, majeures tous les 4) */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(600, 600),
+  new THREE.MeshStandardMaterial({ color: 0x9fa4a8, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const gridMinor = new THREE.GridHelper(128, 128, 0x8b9094, 0x8b9094);
+gridMinor.position.y = 0.02;
+gridMinor.material.opacity = 0.35; gridMinor.material.transparent = true;
+scene.add(gridMinor);
+const gridMajor = new THREE.GridHelper(128, 32, 0x74797d, 0x74797d);
+gridMajor.position.y = 0.03;
+gridMajor.material.opacity = 0.5; gridMajor.material.transparent = true;
+scene.add(gridMajor);
+
+/* ------------------------------------------------------- géométries parts
+   Conventions Roblox reproduites à l'identique :
+   - axes main droite, Y vers le haut, "avant" = -Z (LookVector)
+   - Wedge : face verticale à l'arrière (+Z), pente qui descend vers l'avant (-Z)
+   - CornerWedge : apex au coin arrière-droit (+X, +Z), faces verticales à
+     l'arrière (+Z) et à droite (+X)
+   - Cylinder : axe de la hauteur = X local (Size.X = longueur)
+   - rotation [rx,ry,rz] en degrés = CFrame.fromEulerAnglesXYZ (q = qx*qy*qz)
+*/
+function wedgeGeometry(sx, sy, sz) {
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const b0 = [-hx, -hy, -hz], b1 = [hx, -hy, -hz], b2 = [hx, -hy, hz], b3 = [-hx, -hy, hz];
+  const t2 = [hx, hy, hz], t3 = [-hx, hy, hz];
+  const tris = [
+    b0, b1, b2,  b0, b2, b3,       // dessous
+    b3, b2, t2,  b3, t2, t3,       // dos vertical (+Z)
+    b0, t2, b1,  b0, t3, t2,       // pente (vers -Z)
+    b0, b3, t3,                    // flanc gauche
+    b1, t2, b2                     // flanc droit
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(tris.flat(), 3));
+  g.computeVertexNormals();
+  return g;
+}
+function cornerWedgeGeometry(sx, sy, sz) {
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const b0 = [-hx, -hy, -hz], b1 = [hx, -hy, -hz], b2 = [hx, -hy, hz], b3 = [-hx, -hy, hz];
+  const a = [hx, hy, hz];        // apex arrière-droit
+  const tris = [
+    b0, b1, b2,  b0, b2, b3,       // dessous
+    b3, b2, a,                     // dos vertical (+Z)
+    b1, a, b2,                     // flanc droit vertical (+X)
+    b0, a, b1,                     // pente avant
+    b0, b3, a                      // pente gauche
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(tris.flat(), 3));
+  g.computeVertexNormals();
+  return g;
+}
+function geometryFor(part) {
+  const [sx, sy, sz] = part.size;
+  switch (part.shape) {
+    case "Wedge":       return wedgeGeometry(sx, sy, sz);
+    case "CornerWedge": return cornerWedgeGeometry(sx, sy, sz);
+    case "Cylinder": {
+      const r = Math.min(sy, sz) / 2;
+      const g = new THREE.CylinderGeometry(r, r, sx, 24);
+      g.rotateZ(Math.PI / 2);                 // hauteur le long de X, comme Roblox
+      return g;
+    }
+    case "Ball": {
+      const r = Math.min(sx, sy, sz) / 2;
+      return new THREE.SphereGeometry(r, 24, 18);
+    }
+    default: return new THREE.BoxGeometry(sx, sy, sz);
+  }
+}
+
+/* matériaux Roblox -> PBR approximatif */
+const MATERIAL_PRESETS = {
+  Plastic:       { roughness: 0.80, metalness: 0.0 },
+  SmoothPlastic: { roughness: 0.50, metalness: 0.0 },
+  Neon:          { roughness: 0.40, metalness: 0.0, neon: true },
+  Metal:         { roughness: 0.35, metalness: 0.45 },
+  DiamondPlate:  { roughness: 0.50, metalness: 0.40 },
+  Foil:          { roughness: 0.20, metalness: 0.55 },
+  Wood:          { roughness: 0.90, metalness: 0.0 },
+  WoodPlanks:    { roughness: 0.90, metalness: 0.0 },
+  Marble:        { roughness: 0.35, metalness: 0.0 },
+  Slate:         { roughness: 1.0,  metalness: 0.0 },
+  Concrete:      { roughness: 1.0,  metalness: 0.0 },
+  Brick:         { roughness: 1.0,  metalness: 0.0 },
+  Granite:       { roughness: 0.95, metalness: 0.0 },
+  Cobblestone:   { roughness: 1.0,  metalness: 0.0 },
+  Sand:          { roughness: 1.0,  metalness: 0.0 },
+  Grass:         { roughness: 1.0,  metalness: 0.0 },
+  Fabric:        { roughness: 1.0,  metalness: 0.0 },
+  Glass:         { roughness: 0.05, metalness: 0.0, opacity: 0.40 },
+  Ice:           { roughness: 0.20, metalness: 0.0, opacity: 0.70 },
+  ForceField:    { roughness: 0.10, metalness: 0.0, opacity: 0.25 }
+};
+function materialFor(part) {
+  const preset = MATERIAL_PRESETS[part.material || "SmoothPlastic"] || MATERIAL_PRESETS.SmoothPlastic;
+  const [r, g, b] = part.color || [163, 162, 165];
+  const color = new THREE.Color(r / 255, g / 255, b / 255).convertSRGBToLinear();
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: preset.roughness, metalness: preset.metalness, flatShading: true
+  });
+  if (preset.neon) { mat.emissive = color.clone(); mat.emissiveIntensity = 0.9; }
+  const opacity = (1 - (part.transparency || 0)) * (preset.opacity !== undefined ? preset.opacity : 1);
+  if (opacity < 0.999) { mat.transparent = true; mat.opacity = opacity; }
+  return mat;
+}
+
+/* rotation identique à CFrame.fromEulerAnglesXYZ : q = qx * qy * qz */
+function quatFromRobloxEuler(deg) {
+  const [rx, ry, rz] = (deg || [0, 0, 0]).map(d => d * Math.PI / 180);
+  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rx);
+  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+  const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rz);
+  return qx.multiply(qy).multiply(qz);
+}
+
+/* --------------------------------------------------------- build du modèle */
+const modelRoot = new THREE.Group();
+scene.add(modelRoot);
+const groups = new Map();
+const pickables = [];
+const meshesByName = new Map();
+
+for (const part of MODEL.parts) {
+  const mesh = new THREE.Mesh(geometryFor(part), materialFor(part));
+  mesh.position.set(part.position[0], part.position[1], part.position[2]);
+  mesh.quaternion.copy(quatFromRobloxEuler(part.rotation));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.part = part;
+  let parent = modelRoot;
+  if (part.group) {
+    if (!groups.has(part.group)) {
+      const g = new THREE.Group(); g.name = part.group;
+      modelRoot.add(g); groups.set(part.group, g);
+    }
+    parent = groups.get(part.group);
+  }
+  parent.add(mesh);
+  pickables.push(mesh);
+  if (!meshesByName.has(part.name)) meshesByName.set(part.name, []);
+  meshesByName.get(part.name).push(mesh);
+}
+
+/* bbox + panneau d'infos */
+const bbox = new THREE.Box3().setFromObject(modelRoot);
+const bsize = bbox.getSize(new THREE.Vector3());
+const bcenter = bbox.getCenter(new THREE.Vector3());
+document.getElementById("p-name").textContent = MODEL.name || "__MODEL_NAME__";
+document.getElementById("p-count").textContent =
+  MODEL.parts.length + " parts" + (groups.size ? " · " + groups.size + " groupes" : "");
+document.getElementById("p-dims").textContent =
+  "L " + bsize.x.toFixed(1) + " × H " + bsize.y.toFixed(1) + " × P " + bsize.z.toFixed(1) + " studs";
+
+/* ombre du soleil cadrée sur le modèle */
+const shadowSpan = Math.max(bsize.x, bsize.y, bsize.z) * 1.5 + 8;
+sun.shadow.camera.left = -shadowSpan; sun.shadow.camera.right = shadowSpan;
+sun.shadow.camera.top = shadowSpan;  sun.shadow.camera.bottom = -shadowSpan;
+sun.shadow.camera.far = 400;
+sun.target.position.copy(bcenter); scene.add(sun.target);
+
+/* ------------------------------------------------------- contrôles orbite */
+const orbit = {
+  target: bcenter.clone(),
+  radius: Math.max(bsize.length() * 1.15, 8),
+  theta: Math.PI * 0.8,        // azimut : vue 3/4 avant (l'avant Roblox = -Z)
+  phi: Math.PI / 3.1,          // élévation (0 = zénith)
+  spin: false
+};
+const home = { target: orbit.target.clone(), radius: orbit.radius, theta: orbit.theta, phi: orbit.phi };
+
+function applyCamera() {
+  const sp = Math.sin(orbit.phi), cp = Math.cos(orbit.phi);
+  camera.position.set(
+    orbit.target.x + orbit.radius * sp * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * cp,
+    orbit.target.z + orbit.radius * sp * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+}
+
+let dragBtn = -1, lastX = 0, lastY = 0, moved = 0;
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => {
+  dragBtn = e.shiftKey ? 2 : e.button; lastX = e.clientX; lastY = e.clientY; moved = 0;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (dragBtn < 0) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+  if (dragBtn === 0) {
+    orbit.theta -= dx * 0.008;
+    orbit.phi = Math.min(Math.PI / 2.02, Math.max(0.08, orbit.phi - dy * 0.008));
+  } else {
+    const scale = orbit.radius * 0.0016;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    orbit.target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale);
+  }
+});
+canvas.addEventListener("pointerup", e => {
+  if (dragBtn === 0 && moved < 6) pick(e.clientX, e.clientY);
+  dragBtn = -1;
+});
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  orbit.radius = Math.min(500, Math.max(2, orbit.radius * (e.deltaY > 0 ? 1.12 : 0.89)));
+}, { passive: false });
+
+/* pinch zoom tactile */
+let pinchDist = 0;
+canvas.addEventListener("touchmove", e => {
+  if (e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchDist) orbit.radius = Math.min(500, Math.max(2, orbit.radius * pinchDist / d));
+    pinchDist = d;
+  }
+}, { passive: true });
+canvas.addEventListener("touchend", () => pinchDist = 0);
+
+/* --------------------------------------------------------- pick + panneau */
+const raycaster = new THREE.Raycaster();
+const chip = document.getElementById("chip");
+let selected = null;
+function setSelected(mesh) {
+  if (selected) selected.material.emissiveIntensity = selected.userData.baseEmissive || 0;
+  selected = mesh;
+  if (!mesh) { chip.style.display = "none"; return; }
+  mesh.userData.baseEmissive = mesh.material.emissiveIntensity || 0;
+  if (!mesh.material.emissive || mesh.material.emissive.equals(new THREE.Color(0, 0, 0)))
+    mesh.material.emissive = new THREE.Color(0x2f6fed);
+  mesh.material.emissiveIntensity = 0.35;
+  const p = mesh.userData.part;
+  const hex = "#" + p.color.map(c => c.toString(16).padStart(2, "0")).join("");
+  chip.innerHTML =
+    '<div class="name">' + p.name + '</div>' +
+    '<div><span class="muted">forme</span> ' + p.shape + (p.group ? ' · <span class="muted">groupe</span> ' + p.group : '') + '</div>' +
+    '<div><span class="muted">taille</span> ' + p.size.join(" × ") + '</div>' +
+    '<div><span class="muted">pos</span> ' + p.position.map(v => +v.toFixed(2)).join(", ") +
+      (p.rotation && p.rotation.some(v => v) ? ' · <span class="muted">rot</span> ' + p.rotation.join(", ") + "°" : "") + '</div>' +
+    '<div><span class="swatch" style="background:' + hex + '"></span>' + hex +
+    ' · ' + (p.material || "SmoothPlastic") + '</div>';
+  chip.style.display = "block";
+}
+function pick(x, y) {
+  const rect = canvas.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2(
+    ((x - rect.left) / rect.width) * 2 - 1,
+    -((y - rect.top) / rect.height) * 2 + 1
+  ), camera);
+  const hits = raycaster.intersectObjects(pickables, false);
+  setSelected(hits.length ? hits[0].object : null);
+}
+
+/* ------------------------------------------------------------ boutons UI */
+const bGrid = document.getElementById("b-grid");
+const bWire = document.getElementById("b-wire");
+const bSpin = document.getElementById("b-spin");
+function toggleGrid() {
+  const on = !gridMinor.visible;
+  gridMinor.visible = gridMajor.visible = on;
+  bGrid.classList.toggle("active", on);
+}
+let wire = false;
+function toggleWire() {
+  wire = !wire;
+  pickables.forEach(m => m.material.wireframe = wire);
+  bWire.classList.toggle("active", wire);
+}
+function toggleSpin() { orbit.spin = !orbit.spin; bSpin.classList.toggle("active", orbit.spin); }
+function recenter() {
+  orbit.target.copy(home.target); orbit.radius = home.radius;
+  orbit.theta = home.theta; orbit.phi = home.phi;
+}
+bGrid.onclick = toggleGrid; bWire.onclick = toggleWire;
+bSpin.onclick = toggleSpin; document.getElementById("b-center").onclick = recenter;
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if (k === "g") toggleGrid(); else if (k === "f") toggleWire();
+  else if (k === "r") toggleSpin(); else if (k === "c") recenter();
+  else if (k === " ") { e.preventDefault(); togglePlay(); }
+});
+
+/* ------------------------------------------------------- animations
+   Mêmes conventions que le player Lua généré : une track anime un groupe ou
+   une part autour d'un pivot (espace modèle) ; transform = T(pivot+pos) * R * T(-pivot),
+   R = quatFromRobloxEuler. Les tracks s'appliquent dans l'ordre du JSON
+   (track de groupe avant track de part imbriquée). */
+const ANIMS = MODEL.animations || [];
+const EASING = {
+  linear:        u => u,
+  easeIn:        u => u * u,
+  easeOut:       u => 1 - (1 - u) * (1 - u),
+  easeInOut:     u => u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2,
+  easeInCubic:   u => u * u * u,
+  easeOutCubic:  u => 1 - Math.pow(1 - u, 3),
+  easeOutBack:   u => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); },
+  easeOutBounce: u => {
+    const n1 = 7.5625, d1 = 2.75;
+    if (u < 1 / d1) return n1 * u * u;
+    if (u < 2 / d1) return n1 * (u -= 1.5 / d1) * u + 0.75;
+    if (u < 2.5 / d1) return n1 * (u -= 2.25 / d1) * u + 0.9375;
+    return n1 * (u -= 2.625 / d1) * u + 0.984375;
+  },
+  easeOutElastic: u => {
+    if (u === 0 || u === 1) return u;
+    const c4 = (2 * Math.PI) / 3;
+    return Math.pow(2, -10 * u) * Math.sin((u * 10 - 0.75) * c4) + 1;
+  }
+};
+
+const wrapperCache = new Map();
+function makeWrapper(obj, pivot) {
+  const w = new THREE.Group();
+  w.position.set(pivot[0], pivot[1], pivot[2]);
+  obj.parent.add(w);
+  w.add(obj);
+  obj.position.sub(w.position);
+  return w;
+}
+function wrappersFor(track) {
+  const key = track.target + "|" + (track.pivot || [0, 0, 0]).join(",");
+  if (wrapperCache.has(key)) return wrapperCache.get(key);
+  const pivot = track.pivot || [0, 0, 0];
+  let list = [];
+  if (groups.has(track.target)) list = [makeWrapper(groups.get(track.target), pivot)];
+  else if (meshesByName.has(track.target)) list = meshesByName.get(track.target).map(m => makeWrapper(m, pivot));
+  wrapperCache.set(key, list);
+  return list;
+}
+for (const a of ANIMS) for (const tr of a.tracks) { tr._wrappers = wrappersFor(tr); tr._pivot = tr.pivot || [0, 0, 0]; }
+
+function sampleTrack(track, t) {
+  const kfs = track.keyframes;
+  const val = kf => ({ rot: kf.rotation || [0, 0, 0], pos: kf.position || [0, 0, 0] });
+  if (t <= kfs[0].t) return val(kfs[0]);
+  if (t >= kfs[kfs.length - 1].t) return val(kfs[kfs.length - 1]);
+  let i = 0;
+  while (i < kfs.length - 2 && t >= kfs[i + 1].t) i++;
+  const a = val(kfs[i]), b = val(kfs[i + 1]);
+  const u = (t - kfs[i].t) / (kfs[i + 1].t - kfs[i].t);
+  const e = (EASING[kfs[i].easing || "easeInOut"] || EASING.easeInOut)(u);
+  return {
+    rot: a.rot.map((v, k) => v + (b.rot[k] - v) * e),
+    pos: a.pos.map((v, k) => v + (b.pos[k] - v) * e)
+  };
+}
+function applyAnim(anim, t) {
+  for (const tr of anim.tracks) {
+    const { rot, pos } = sampleTrack(tr, t);
+    const q = quatFromRobloxEuler(rot);
+    for (const w of tr._wrappers) {
+      w.quaternion.copy(q);
+      w.position.set(tr._pivot[0] + pos[0], tr._pivot[1] + pos[1], tr._pivot[2] + pos[2]);
+    }
+  }
+}
+function resetPose() {
+  for (const [key, list] of wrapperCache) {
+    const pivot = key.split("|")[1].split(",").map(Number);
+    for (const w of list) { w.quaternion.identity(); w.position.set(pivot[0], pivot[1], pivot[2]); }
+  }
+}
+
+const player = { anim: null, time: 0, playing: false, loop: false };
+const animBox = document.getElementById("animbox");
+const aSelect = document.getElementById("a-select");
+const aPlay = document.getElementById("a-play");
+const aLoop = document.getElementById("a-loop");
+const aScrub = document.getElementById("a-scrub");
+const aTime = document.getElementById("a-time");
+
+function selectAnim(name) {
+  player.anim = ANIMS.find(a => a.name === name) || null;
+  player.time = 0; player.playing = false;
+  aPlay.textContent = "▶";
+  resetPose();
+  if (player.anim) { player.loop = !!player.anim.loop; applyAnim(player.anim, 0); }
+  aLoop.classList.toggle("active", player.loop);
+  syncAnimUI();
+}
+function syncAnimUI() {
+  if (!player.anim) return;
+  aScrub.value = player.anim.duration ? player.time / player.anim.duration : 0;
+  aTime.textContent = player.time.toFixed(2) + " / " + player.anim.duration.toFixed(2) + " s";
+}
+function togglePlay() {
+  if (!player.anim) return;
+  if (!player.playing && player.time >= player.anim.duration) player.time = 0;
+  player.playing = !player.playing;
+  aPlay.textContent = player.playing ? "⏸" : "▶";
+}
+function animTick(dt) {
+  if (!player.anim || !player.playing) return;
+  player.time += dt;
+  if (player.time >= player.anim.duration) {
+    if (player.loop) player.time -= player.anim.duration;
+    else { player.time = player.anim.duration; player.playing = false; aPlay.textContent = "▶"; }
+  }
+  applyAnim(player.anim, player.time);
+  syncAnimUI();
+}
+if (ANIMS.length) {
+  animBox.style.display = "block";
+  for (const a of ANIMS) {
+    const o = document.createElement("option");
+    o.value = a.name; o.textContent = a.name + " (" + a.duration + "s)";
+    aSelect.appendChild(o);
+  }
+  aSelect.onchange = () => selectAnim(aSelect.value);
+  aPlay.onclick = togglePlay;
+  aLoop.onclick = () => { player.loop = !player.loop; aLoop.classList.toggle("active", player.loop); };
+  aScrub.oninput = () => {
+    if (!player.anim) return;
+    player.time = aScrub.value * player.anim.duration;
+    applyAnim(player.anim, player.time);
+    syncAnimUI();
+  };
+  selectAnim(ANIMS[0].name);
+}
+
+/* ------------------------------------------------------------------ boucle */
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* Paramètres d'URL pour screenshots déterministes :
+   ?anim=Nom&t=0.8   pose l'animation à t secondes
+   ?anim=Nom&play=1  lance la lecture                                   */
+const urlp = new URLSearchParams(location.search);
+if (urlp.get("anim") && ANIMS.length) {
+  selectAnim(urlp.get("anim"));
+  aSelect.value = urlp.get("anim");
+  if (player.anim) {
+    if (urlp.has("t")) {
+      player.time = Math.min(parseFloat(urlp.get("t")) || 0, player.anim.duration);
+      applyAnim(player.anim, player.time);
+      syncAnimUI();
+    }
+    if (urlp.get("play") === "1") togglePlay();
+  }
+}
+
+let prev = performance.now();
+function frame(now) {
+  const dt = (now - prev) / 1000; prev = now;
+  if (orbit.spin) orbit.theta += dt * 0.45;
+  animTick(dt);
+  applyCamera();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
