@@ -53,6 +53,14 @@ décider à votre place :
 Le seuil du contrôle est 0.015 : un décalage de 0.02 déjà en place est considéré
 comme traité.
 
+*Une exception, le **plan de pose***. La convention HyperBlox veut que le modèle
+pose au sol : toutes les parts qui touchent le sol ont donc leur dessous
+exactement à `y = 0`, tournées vers le bas, contre le terrain. Ces faces-là sont
+confondues et personne ne les verra jamais. Le contrôle les ignore — sans quoi
+un modèle posant sur `k` parts produirait `k(k−1)/2` constats inutiles. Relevé
+sur une bibliothèque de 36 props : **45 % des constats**, et les vrais défauts
+noyés dedans.
+
 ### `noyee` — une part enfermée dans une autre · **grave**
 
 Les huit coins d'une part sont à l'intérieur d'une autre part opaque : elle ne

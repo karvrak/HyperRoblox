@@ -301,6 +301,19 @@ function facesDe(b) {
 }
 const FACES = (actif("zfight") || actif("joint")) ? B.map(facesDe) : [];
 
+/* Le PLAN DE POSE — y = 0 — est le seul plan du modèle dont les faces
+   confondues ne sont pas un défaut. La convention HyperBlox veut que le modèle
+   pose au sol : toutes les parts qui touchent le sol ont donc leur dessous
+   exactement à y = 0, tournées vers le bas, contre le terrain. Personne ne les
+   verra jamais.
+   Sans cette exception, un modèle posant sur k parts produit k(k−1)/2 constats
+   parfaitement inutiles — relevé sur la bibliothèque de végétation : un quart
+   des constats, et le vrai défaut noyé dedans. */
+const poseAuSol = Math.min(...B.map((b) => b.min[1])) > -0.05
+  && Math.min(...B.map((b) => b.min[1])) < 0.05;
+const faceContreLeSol = (f) =>
+  poseAuSol && f.n[1] < -0.999 && Math.abs(f.pt[1]) < 0.02;
+
 /* ------------------------------------------------------- zfight / joint -- */
 // Les déplacements sont ACCUMULÉS puis appliqués une fois, pas écrits au fil de
 // l'eau. Deux raisons, toutes deux apprises sur un caisson à panneaux :
@@ -368,6 +381,7 @@ if (actif("zfight") || actif("joint")) {
         if (Math.abs(d) < 0.9995) continue;                  // faces non parallèles
         const ecart = Math.abs(dot(fa.n, subV(fb.pt, fa.pt)));
         if (ecart >= 0.015) continue;   // 0.02 est le décalage recommandé : déjà traité
+        if (faceContreLeSol(fa) && faceContreLeSol(fb)) continue;   // dessous du modèle
         // recouvrement : combien d'échantillons de A tombent sur le solide de B
         let touche = 0;
         for (const e of fa.ech) {
