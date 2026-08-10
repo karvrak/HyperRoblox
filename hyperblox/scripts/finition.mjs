@@ -816,6 +816,21 @@ if (SORTIE_JSON) {
   for (const id of ordre) {
     const l = parId.get(id);
     console.log(`\n${PICTO[l[0].gravite]} ${id} — ${LIB[id]} (${l.length})`);
+    // Quand un même MOTIF de noms revient, ce ne sont pas N défauts mais UN
+    // défaut de règle, répété par une boucle du générateur. Le dire évite de
+    // prendre une avalanche de constats pour du bruit et de passer à côté —
+    // c'est exactement l'erreur qui a laissé grésiller l'arc d'un portail
+    // pendant qu'on écartait « 125 constats de maçonnerie ».
+    const motifs = new Map();
+    for (const c of l) {
+      const cle = c.parts.map((p) => p.replace(/\d+/g, "#")).join(" + ");
+      motifs.set(cle, (motifs.get(cle) || 0) + 1);
+    }
+    for (const [cle, n] of [...motifs].sort((a, b) => b[1] - a[1])) {
+      if (n < 4) continue;
+      console.log(`    ⚑ ${n}× le même motif « ${cle} » : ce ne sont pas ${n} défauts, `
+        + "c'est UNE règle du générateur qui les produit. Corriger la règle, pas les cas.");
+    }
     for (const c of l.slice(0, MAX)) console.log("    " + c.texte);
     if (l.length > MAX) console.log(`    … et ${l.length - MAX} autres (--max ${l.length} pour tout voir)`);
   }

@@ -107,12 +107,33 @@ que pour des poses simples. Dès qu'une pièce tourne sur ses trois axes — le 
 de toute aile — il faut passer par la matrice de rotation. `miroirX` le fait ;
 le faire à la main, non. L'erreur ne se voit que de dos.
 
-**Les surfaces coplanaires par construction.** Toutes les lattes d'une membrane
-sont dans le même plan ; toutes les faces du dessus d'un `biseau` sont à la même
-hauteur. C'est du z-fighting garanti. Les primitives étagent donc leurs pièces
-de 0.03-0.04 stud — invisible à distance de jeu, décisif en jeu. En écrivant une
-primitive à soi, y penser dès le premier jet : c'est indétectable sur une
-capture.
+**Les surfaces coplanaires par construction — le piège numéro un.** C'est le
+défaut le plus coûteux du mode détaillé, parce qu'il naît de la chose même qui
+fait le détail : une BOUCLE.
+
+Dès qu'une série de parts est produite par une boucle, elles partagent une cote.
+Quinze claveaux d'arc tournés autour de Z ont tous leurs faces avant dans le même
+plan ; trois pierres d'une assise ont le même dessus ; toutes les lattes d'une
+membrane sont dans le plan de la toile ; les six pièces d'un `biseau` ont la même
+hauteur. Si en plus elles se chevauchent — et un arc se ferme justement parce que
+ses claveaux se chevauchent — le rendu grésille sur toute la série.
+
+La règle : **étager la série**. Un décalage de 0.03 à 0.09 par index suffit,
+invisible à distance de jeu. Les primitives de `volume.mjs` le font déjà pour
+elles-mêmes ; en écrivant une boucle à soi, y penser au premier jet.
+
+Deux pièges dans l'étagement lui-même, tous deux payés comptant :
+
+1. **Translater, ne pas redimensionner.** Réduire une part de `d` en décalant son
+   centre de `d/2` étage une face — et laisse l'AUTRE exactement où elle était.
+   Le défaut passe de l'avant vers l'arrière, on croit avoir corrigé, et l'arc
+   grésille toujours de l'autre côté.
+2. **Vérifier QUELLE face on étage.** Celle qu'on voit, pas celle qu'on calcule.
+
+Et ce défaut est **indétectable sur une capture figée** : le z-fighting ne se
+manifeste qu'en mouvement. Seul `finition.mjs` le voit. Quand il annonce des
+dizaines de constats du même motif, ce n'est pas du bruit — c'est une règle de
+générateur qui se répète, et il le dit maintenant explicitement (`⚑`).
 
 **Le plafond des 200 000 caractères.** Une source de script Roblox est plafonnée.
 `build.mjs` passe automatiquement en écriture compacte au-delà de 120 parts

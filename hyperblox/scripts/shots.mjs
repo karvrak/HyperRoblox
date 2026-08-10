@@ -24,7 +24,7 @@
 //
 // Et surtout PAS de `--virtual-time-budget` : la préview tourne en
 // requestAnimationFrame, le temps virtuel n'avance jamais, Chrome se fige.
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -78,6 +78,10 @@ for (const d of dossiers) {
   const preview = join(d, "preview.html");
   if (!existsSync(preview)) { rates.push(basename(d) + " : pas de preview.html — lancer build.mjs"); continue; }
   const sortie = join(d, vue.nom + ".png");
+  // On EFFACE la cible d'abord : Chrome laisse parfois le PNG précédent en
+  // place (fichier verrouillé par un lecteur, écriture refusée) et on relit
+  // alors tranquillement la capture d'avant, en croyant voir la nouvelle.
+  if (existsSync(sortie)) { try { rmSync(sortie); } catch { /* verrouillé : la garde ci-dessous rattrapera */ } }
   const avant = existsSync(sortie) ? statSync(sortie).mtimeMs : 0;
   const stamp = Math.round(statSync(join(d, "model.json")).mtimeMs);
   const url = pathToFileURL(preview).href + (params ? params + "&" : "?") + "cache=" + stamp;
