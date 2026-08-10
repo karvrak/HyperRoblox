@@ -122,3 +122,59 @@ anim.reset()                                         -- retour à la pose de bas
   est purement cosmétique ; côté serveur si le gameplay en dépend.
 - Noms de parts dupliqués : le player résout les cibles par
   `FindFirstChild` récursif — garder les `target` uniques dans le modèle.
+
+---
+
+## Particules (`emitters`) — Roblox uniquement
+
+Un `model.json` peut déclarer des `ParticleEmitter`. **La préview HTML ne les
+simule pas** (le viewer Three.js n'a pas de système de particules) : elle affiche
+seulement leur nombre dans le panneau. Elles n'existent qu'une fois `build.lua`
+exécuté dans Studio — le juger là, pas dans la maquette.
+
+```json
+"emitters": [
+  {
+    "name": "FxPuits",              // unique, ne doit pas collisionner avec une part
+    "parent": "PuitsLueur",         // nom d'une part existante
+    "offset": [0, 0.7, 0],          // optionnel → crée un Attachment (émission ponctuelle).
+                                    // Sans offset, l'émetteur est enfant de la part et
+                                    // `shape` utilise son volume.
+    "color": [178, 96, 250], "colorEnd": [236, 224, 255],
+    "size": [0.5, 1.9],             // [début, fin] en studs
+    "transparency": [0.12, 1],
+    "lifetime": [0.9, 1.7], "speed": [2, 6],
+    "rotation": [0, 0], "rotSpeed": [-110, 110],
+    "rate": 65, "spread": 180, "drag": 1,
+    "acceleration": [0, 11, 0],
+    "lightEmission": 0.9, "lightInfluence": 0, "zoffset": 0,
+    "texture": "rbxasset://textures/particles/sparkles_main.dds",
+    "shape": "Box|Sphere|Cylinder|Disc",
+    "shapeInOut": "Outward|Inward|InAndOut",
+    "orientation": "FacingCamera|FacingCameraWorldUp|VelocityParallel|VelocityPerpendicular",
+    "emissionDirection": "Top|Bottom|Front|Back|Left|Right",
+    "enabled": false,
+    "windows": { "Fusion": [[0.9, 4.7]] }
+  }
+]
+```
+
+- **`windows`** = fenêtres `[tOn, tOff]` par animation. `HyperBloxAnim` allume et
+  éteint l'émetteur pendant la lecture (et à `sample()`). C'est ce qui synchronise
+  les particules sur les temps forts.
+- Un émetteur **sans `windows`** n'est jamais touché par les animations : mettre
+  `"enabled": true` pour un effet permanent (le feu d'un brasero reste allumé
+  pendant la fusion).
+- `anim.stop()` coupe tous les émetteurs pilotés par fenêtres. Pour un état qui
+  persiste après l'animation : `anim.fx("FxReliquaire", true)`.
+
+⚠ **Piège des parts tournées** : `EmissionDirection` est *local à la part*. Un
+`Cylinder` debout a `rotation [0,0,90]`, donc son axe Y local pointe vers −X du
+monde — `Top` n'émet pas vers le haut. Deux solutions : `spread: 180` (émission
+omnidirectionnelle, la direction n'a plus d'importance) + `acceleration` pour
+donner le sens, ou choisir la bonne face (`Right` pour un cylindre à
+`rotation [0,0,90]`).
+
+Textures livrées avec le moteur, sans asset ID à charger :
+`rbxasset://textures/particles/sparkles_main.dds`, `.../fire_main.dds`,
+`.../smoke_main.dds`.

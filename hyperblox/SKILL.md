@@ -28,15 +28,36 @@ hyperblox/<slug>/
 `model.json` puis regénérer. Ce que la préview montre est ce que Studio construit
 (mêmes conventions géométriques des deux côtés).
 
+## Deux modes, deux méthodes
+
+| | **Low-poly** (défaut) | **Détaillé** |
+|---|---|---|
+| Pour | props, objets, décor | créatures, boss, tout ce qui se voit de près |
+| Budget | 5 à 35 parts | 150 à 600 parts |
+| Source de vérité | `model.json` écrit à la main | un **générateur** `gen-<slug>.mjs` qui produit le `model.json` |
+| Guide | `references/style-lowpoly.md` | `references/style-detaille.md` |
+
+Le basculement se fait vers ~80 parts, et il n'est pas cosmétique : au-delà,
+un `model.json` écrit à la main n'est plus **modifiable** — changer l'angle
+d'une aile demanderait de recalculer trente positions, donc on ne le fait pas,
+donc le modèle se fige sur sa première version. Le générateur rend la
+proportion modifiable, c'est là son intérêt, pas la vitesse d'écriture.
+
 ## Lectures obligatoires avant d'écrire un model.json
 
 - `references/part-schema.md` — schéma JSON, axes, conventions Wedge/Cylinder,
   matériaux autorisés, pivot au sol.
 - `references/style-lowpoly.md` — lecture d'image, budget de parts, palette,
   règles anti z-fighting, échelle en studs.
+- `references/style-detaille.md` — **si le modèle vise le volume** (créature,
+  boss, ailes) : bascule vers un générateur, primitives de `lib/volume.mjs`
+  (chanfrein, fuseau, membrane, plumes, écailles, miroir), pièges du miroir
+  d'Euler et des surfaces coplanaires, budget par nombre d'exemplaires à l'écran.
 - `references/animations.md` — **si le modèle doit bouger** : schéma des tracks
   keyframes, pivots, easings, recettes (porte, couvercle, tiroir, rotation),
-  API du player Lua.
+  API du player Lua, et le schéma des `emitters` (particules Roblox).
+- `references/finition.md` — **avant de construire dans Studio** : le catalogue
+  des défauts géométriques et la passe qui les rattrape.
 - `examples/treasure-chest/model.json` — exemple complet et déjà validé
   (dont animations de couvercle).
 
@@ -111,6 +132,25 @@ Pour une animation, screenshoter plusieurs temps via les paramètres d'URL
 (`preview.html?anim=Nom&t=0.7`) : pose de base à `t=0`, un temps intermédiaire,
 pose finale à `t=duration` (détails : `references/animations.md`).
 
+La caméra se pilote aussi par l'URL — indispensable pour juger un modèle **tel
+que le joueur le verra** (yeux à ~4 studs), la vue 3/4 par défaut mentant sur
+les occlusions (un auvent qui « cache la porte » vue d'en haut est parfait vu
+d'en bas) :
+
+| Param | Effet |
+|---|---|
+| `theta=<deg>` | azimut : `0` = pile devant (−Z), `90` = côté droit |
+| `phi=<deg>` | élévation : `90` = à hauteur de la cible, `50` = 3/4, `15` = de dessus |
+| `dist=<studs>` | distance à la cible |
+| `tx` `ty` `tz` | point visé en studs (défaut : centre du modèle) — pour cadrer un détail |
+
+Vue « joueur » type : `?theta=18&phi=87&dist=<1.2×largeur>&ty=6`.
+
+⚠ Chrome headless **se bloque avec `--virtual-time-budget`** sur cette préview
+(boucle `requestAnimationFrame` + temps virtuel = boucle infinie). L'omettre :
+le screenshot est pris au chargement, et la scène est déterministe (`spin`
+désactivé par défaut).
+
 ### 4. Valider avec l'utilisateur
 
 Ouvrir la préview dans son navigateur (`Start-Process <chemin>\preview.html`)
@@ -120,6 +160,25 @@ donner ses retours en nommant les parts), et si le modèle a des animations,
 un panneau lecture/boucle/scrubber pour les juger image par image. Itérer sur
 `model.json` jusqu'au OK.
 
+### 4 bis. Finition, avant de construire
+
+Une fois la silhouette validée — et **seulement** à ce moment, soigner des
+détails sur des masses qui vont encore bouger étant du travail fait deux fois :
+
+```powershell
+node .claude/skills/hyperblox/scripts/finition.mjs hyperblox/<famille>/<slug>
+```
+
+La passe attrape ce que ni le schéma ni une capture ne montrent : deux faces
+confondues qui **clignoteront en jeu sans jamais apparaître sur un rendu figé**,
+un bout de barre qui ressort dans le vide après avoir traversé une masse, une
+volée de marches sans contremarche, une part invisible noyée dans une autre.
+`--fix` applique les corrections sûres — et refuse d'écrire sur un `model.json`
+généré, où la correction serait perdue à la régénération suivante.
+
+Détail des contrôles et des arbitrages : `references/finition.md`.
+Passe guidée de bout en bout : la commande `/hyperblox-finition`.
+
 ### 5. Construire dans Roblox
 
 Après validation seulement :
@@ -128,6 +187,26 @@ Après validation seulement :
   d'exécuter `build.lua` directement, puis vérifier le résultat en jeu
   (le script `print` un récap `[HyperBlox]`).
 - **Sinon** : livrer `build.lua` à coller dans la barre de commande de Studio.
+  ⚠ Au-delà de ~50 Ko, la barre de commande n'encaisse pas le collage : passer
+  par un ModuleScript (`build.lua` finit par `return true`, il est require-able
+  tel quel) et le relancer via un clone, pour contourner le cache de `require` :
+  ```lua
+  local m = game.ServerStorage.BuildXxx:Clone()
+  m.Parent = game.ServerStorage ; require(m) ; m:Destroy()
+  ```
+- **Le plafond des 200 000 caractères.** Une source de script Roblox est
+  plafonnée : au-delà, le ModuleScript refuse la source. `build.mjs` bascule
+  donc tout seul en écriture **compacte** au-delà de 120 parts — une table de
+  données parcourue par une boucle, environ 5× plus court que la forme lisible,
+  pour exactement la même géométrie (forçable par `--compact` / `--lisible`).
+  Il annonce la taille produite à chaque build et avertit dès qu'elle approche
+  du plafond. Si même le compact ne passe pas — c'est le cas des modèles à
+  animations lourdes, où c'est le module `HyperBloxAnim` embarqué qui pèse — il
+  faut transporter le `model.json` en **données** et non en code : un
+  `StringValue` n'a pas de plafond, lui. En pratique, deux pièces à poser une
+  fois dans le projet : un petit serveur HTTP local qui sert le `model.json`
+  (`_outils/serve.mjs`) et un installeur Luau qui le lit et construit depuis les
+  données (`_outils/install-json.lua`).
 
 Le script est idempotent (remplace le modèle du même nom dans `workspace`) ;
 `CONFIG` en tête permet de changer parent/position/rotation sans regénérer.

@@ -332,6 +332,16 @@ animModule.Source = [==[
 --   anim.stop()                                -- fige la pose courante
 --   anim.reset()                               -- retour à la pose de base
 --   anim.list()                                -- noms disponibles
+--   anim.fx("NomEmetteur", true)               -- forcer un émetteur de particules
+--   anim.fxOff()                               -- couper tous les émetteurs pilotés
+--   anim.parts("NomAnimation")                 -- les parts que l'anim fait bouger
+--
+-- Le modèle PEUT se déplacer pendant la lecture : tout est exprimé dans le
+-- repère du PrimaryPart (le « Root »), relu à chaque image. Déplacer, tourner
+-- ou incliner le Root emmène l'animation avec lui. Deux conditions : que le
+-- Root ne soit lui-même la cible d'aucune track, et que les parts animées
+-- soient ANCRÉES — le player leur écrit un CFrame absolu à chaque image, une
+-- soudure se battrait avec lui (cf. parts(), qui dit lesquelles).
 
 local RunService = game:GetService("RunService")
 
@@ -427,11 +437,61 @@ local ANIMS = {
 	},
 }
 
+-- émetteurs de particules pilotés par les animations : { nom, fenêtres [tOn, tOff] }
+local FX = {}
+
 local model = script.Parent
 local M = {}
 local conn = nil
 local bases = nil
 local originCF = nil
+-- Les pivots des tracks sont en unités du model.json. Si le modèle a été
+-- redimensionné (ScaleTo — mutations, mise à l'échelle d'une scène), il faut
+-- les mettre à la même échelle, sinon les rotations tournent autour d'un point
+-- trop lointain et les parts se dispersent.
+local echelle = 1
+
+local fxCache = nil
+local function fxInstances()
+	if fxCache then return fxCache end
+	fxCache = {}
+	for _, f in ipairs(FX) do
+		local inst = model:FindFirstChild(f.name, true)
+		if inst then table.insert(fxCache, { inst = inst, windows = f.windows }) end
+	end
+	return fxCache
+end
+
+-- allume/éteint les émetteurs selon les fenêtres de l'animation en cours.
+-- Un émetteur sans fenêtre pour cette animation n'est jamais touché (ex. le feu
+-- permanent d'un brasero reste allumé pendant la fusion).
+local function applyFx(animName, t)
+	for _, f in ipairs(fxInstances()) do
+		local wins = f.windows[animName]
+		if wins then
+			local on = false
+			for _, w in ipairs(wins) do
+				if t >= w[1] and t <= w[2] then on = true; break end
+			end
+			if f.inst.Enabled ~= on then f.inst.Enabled = on end
+		end
+	end
+end
+
+function M.fx(name, on)
+	for _, f in ipairs(fxInstances()) do
+		if f.inst.Name == name then f.inst.Enabled = on ~= false return true end
+	end
+	local inst = model:FindFirstChild(name, true)
+	if inst and inst:IsA("ParticleEmitter") then inst.Enabled = on ~= false return true end
+	return false
+end
+
+function M.fxOff()
+	for _, f in ipairs(fxInstances()) do
+		if f.inst.Enabled then f.inst.Enabled = false end
+	end
+end
 
 local EASING = {
 	linear = function(u) return u end,
@@ -488,13 +548,17 @@ end
 local function ensureCapture()
 	if bases then return end
 	originCF = model.PrimaryPart.CFrame
+	local ok, s = pcall(function() return model:GetScale() end)
+	echelle = (ok and type(s) == "number" and s > 0) and s or 1
 	bases = {}
 	for _, a in ipairs(ANIMS) do
 		for _, tr in ipairs(a.tracks) do
 			if not bases[tr] then
 				local parts = targetParts(tr.target)
 				local cfs = {}
-				for i, p in ipairs(parts) do cfs[i] = p.CFrame end
+				-- Poses de base RELATIVES au Root, et non absolues : c'est ce qui
+				-- laisse le modèle bouger pendant la lecture.
+				for i, p in ipairs(parts) do cfs[i] = originCF:Inverse() * p.CFrame end
 				bases[tr] = { parts = parts, cframes = cfs }
 			end
 		end
@@ -522,15 +586,16 @@ local function sampleTrack(tr, t)
 	return rot, pos
 end
 
--- transform d'une track à t : T(pivot+pos) * R * T(-pivot), conjugué par
--- l'origine du modèle — identique au wrapper de pivot de preview.html
+-- transform d'une track à t : T(pivot+pos) * R * T(-pivot), exprimé dans le
+-- repère du Root — identique au wrapper de pivot de preview.html
 local function trackTransform(tr, t)
 	local rot, pos = sampleTrack(tr, t)
 	local pv = tr.pivot
-	local T = CFrame.new(pv[1] + pos[1], pv[2] + pos[2], pv[3] + pos[3])
+	local e = echelle
+	local T = CFrame.new((pv[1] + pos[1]) * e, (pv[2] + pos[2]) * e, (pv[3] + pos[3]) * e)
 		* CFrame.fromEulerAnglesXYZ(math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3]))
-		* CFrame.new(-pv[1], -pv[2], -pv[3])
-	return originCF * T * originCF:Inverse()
+		* CFrame.new(-pv[1] * e, -pv[2] * e, -pv[3] * e)
+	return T
 end
 
 local function apply(anim, t)
@@ -549,9 +614,30 @@ local function apply(anim, t)
 			end
 		end
 	end
+	-- Le repère est relu À CHAQUE IMAGE sur le Root : déplacer le modèle suffit
+	-- à emmener l'animation avec lui, sans rien recapturer.
+	local racine = model.PrimaryPart.CFrame
 	for p, T in pairs(perPart) do
-		p.CFrame = T * baseOf[p]
+		p.CFrame = racine * T * baseOf[p]
 	end
+	applyFx(anim.name, t)
+end
+
+-- Les parts qu'une animation fait bouger. Utile à qui déplace un modèle en
+-- cours de lecture : celles-là doivent être ANCRÉES (le player leur écrit un
+-- CFrame absolu à chaque image), les autres se soudent au support qui porte le
+-- modèle. Souder une part animée, c'est la faire trembler entre deux maîtres.
+function M.parts(name)
+	local out, vus = {}, {}
+	for _, tr in ipairs(findAnim(name).tracks) do
+		for _, p in ipairs(targetParts(tr.target)) do
+			if not vus[p] then
+				vus[p] = true
+				table.insert(out, p)
+			end
+		end
+	end
+	return out
 end
 
 function M.list()
@@ -562,6 +648,7 @@ end
 
 function M.stop()
 	if conn then conn:Disconnect() conn = nil end
+	M.fxOff()
 end
 
 function M.sample(name, t)
@@ -574,8 +661,9 @@ end
 function M.reset()
 	M.stop()
 	if not bases then return end
+	local racine = model.PrimaryPart.CFrame
 	for _, b in pairs(bases) do
-		for i, p in ipairs(b.parts) do p.CFrame = b.cframes[i] end
+		for i, p in ipairs(b.parts) do p.CFrame = racine * b.cframes[i] end
 	end
 end
 
@@ -612,3 +700,5 @@ animModule.Parent = model
 model.Parent = CONFIG.PARENT
 print(("[HyperBlox] %s construit : %d parts, %s studs, 2 animation(s) — require(model.HyperBloxAnim).play(\"Ouvrir\")"):format(
 	MODEL_NAME, 20, "3.325 x 3.2 x 3.5"))
+
+return true

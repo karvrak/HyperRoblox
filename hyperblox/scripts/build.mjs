@@ -18,9 +18,18 @@ import { fileURLToPath } from "node:url";
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /* ------------------------------------------------------------------ entrée */
-const arg = process.argv[2];
+const argv = process.argv.slice(2);
+const arg = argv.find((a) => !a.startsWith("--"));
+// Deux formes de build.lua pour les mêmes données :
+//   lisible  — un bloc `do … end` par part, facile à lire et à retoucher ;
+//   compact  — une table de données + une boucle, ~5× plus court.
+// Une source de script Roblox est plafonnée à 200 000 caractères : au-delà de
+// ~120 parts la forme lisible ne PASSE PLUS en ModuleScript. Le choix est donc
+// automatique, et forçable dans les deux sens.
+const COMPACT = argv.includes("--compact") ? true : argv.includes("--lisible") ? false : null;
+const PLAFOND_SOURCE = 200000;
 if (!arg) {
-  console.error("Usage : node build.mjs <dossier-du-modele | model.json>");
+  console.error("Usage : node build.mjs <dossier-du-modele | model.json> [--compact | --lisible]");
   process.exit(1);
 }
 let jsonPath = resolve(arg);
@@ -71,7 +80,13 @@ for (const [i, p] of (model.parts || []).entries()) {
     warnings.push(id + " : Cylinder avec size[1] != size[2] — le diamètre rendu est min(Y, Z).");
 }
 for (const [name, count] of seenNames) if (count > 1) warnings.push("Nom de part dupliqué : `" + name + "` (×" + count + ") — autorisé mais gêne l'itération.");
-if ((model.parts || []).length > 80) warnings.push(model.parts.length + " parts — au-delà de ~80, envisager de simplifier (budget low-poly).");
+// Le nombre de parts n'est pas un défaut en soi — une créature détaillée en
+// demande des centaines. Ce qui coûte, c'est le rendu en jeu : on n'avertit
+// qu'au seuil où la question se pose vraiment, et sans réclamer de simplifier.
+if ((model.parts || []).length > 400) {
+  warnings.push(model.parts.length + " parts — au-delà de ~400, vérifier le coût en jeu si le modèle est instancié "
+    + "plusieurs fois à l'écran (un boss unique le supporte, un mob de meute non).");
+}
 
 /* ------------------------------------------------- validation animations */
 const EASINGS = new Set([
@@ -110,6 +125,50 @@ for (const [ai, a] of (model.animations || []).entries()) {
         errors.push(kid + " : easing inconnu `" + kf.easing + "` (" + [...EASINGS].join("|") + ").");
     }
     if (tr.keyframes[0].t !== 0) warnings.push(tid + " : la première keyframe n'est pas à t=0 — la pose de base sera tenue jusqu'à t=" + tr.keyframes[0].t + ".");
+  }
+}
+
+/* ------------------------------------------ émetteurs de particules (optionnel) */
+const EMITTER_SHAPES = new Set(["Box", "Sphere", "Cylinder", "Disc"]);
+const EMITTER_INOUT = new Set(["Outward", "Inward", "InAndOut"]);
+const EMITTER_ORIENT = new Set(["FacingCamera", "FacingCameraWorldUp", "VelocityParallel", "VelocityPerpendicular"]);
+const EMITTER_DIR = new Set(["Top", "Bottom", "Front", "Back", "Left", "Right"]);
+const emitterNames = new Set();
+for (const [i, e] of (model.emitters || []).entries()) {
+  const id = "emitters[" + i + "]" + (e.name ? " (" + e.name + ")" : "");
+  if (!e.name) errors.push(id + " : `name` requis.");
+  else if (emitterNames.has(e.name)) errors.push(id + " : nom d'émetteur dupliqué.");
+  else emitterNames.add(e.name);
+  if (partSet.has(e.name)) errors.push(id + " : le nom collisionne avec une part.");
+  if (!e.parent || !partSet.has(e.parent))
+    errors.push(id + " : `parent` doit être le nom d'une part existante (reçu `" + e.parent + "`).");
+  for (const key of ["offset", "acceleration"])
+    if (e[key] !== undefined && (!Array.isArray(e[key]) || e[key].length !== 3))
+      errors.push(id + " : `" + key + "` doit être [x, y, z].");
+  for (const key of ["color", "colorEnd"])
+    if (e[key] !== undefined && (!Array.isArray(e[key]) || e[key].length !== 3 || e[key].some(v => !Number.isInteger(v) || v < 0 || v > 255)))
+      errors.push(id + " : `" + key + "` doit être [r, g, b] entiers 0-255.");
+  for (const key of ["size", "transparency", "lifetime", "speed", "rotation", "rotSpeed"])
+    if (e[key] !== undefined && (!Array.isArray(e[key]) || e[key].length !== 2 || e[key].some(v => typeof v !== "number")))
+      errors.push(id + " : `" + key + "` doit être [début, fin] (2 nombres).");
+  if (e.shape !== undefined && !EMITTER_SHAPES.has(e.shape))
+    errors.push(id + " : `shape` inconnu `" + e.shape + "` (" + [...EMITTER_SHAPES].join("|") + ").");
+  if (e.shapeInOut !== undefined && !EMITTER_INOUT.has(e.shapeInOut))
+    errors.push(id + " : `shapeInOut` inconnu `" + e.shapeInOut + "` (" + [...EMITTER_INOUT].join("|") + ").");
+  if (e.orientation !== undefined && !EMITTER_ORIENT.has(e.orientation))
+    errors.push(id + " : `orientation` inconnu `" + e.orientation + "` (" + [...EMITTER_ORIENT].join("|") + ").");
+  if (e.emissionDirection !== undefined && !EMITTER_DIR.has(e.emissionDirection))
+    errors.push(id + " : `emissionDirection` inconnu `" + e.emissionDirection + "` (" + [...EMITTER_DIR].join("|") + ").");
+  for (const [anim, wins] of Object.entries(e.windows || {})) {
+    if (!animNames.has(anim)) { errors.push(id + " : `windows` cible l'animation inconnue `" + anim + "`."); continue; }
+    if (!Array.isArray(wins) || !wins.length) { errors.push(id + " : `windows." + anim + "` doit être une liste de [tOn, tOff]."); continue; }
+    const dur = model.animations.find(a => a.name === anim).duration;
+    for (const w of wins) {
+      if (!Array.isArray(w) || w.length !== 2 || w.some(v => typeof v !== "number") || w[1] <= w[0])
+        errors.push(id + " : fenêtre invalide dans `windows." + anim + "` — attendu [tOn, tOff] avec tOff > tOn.");
+      else if (w[0] < 0 || w[1] > dur)
+        warnings.push(id + " : fenêtre [" + w[0] + ", " + w[1] + "] hors de la durée de `" + anim + "` (" + dur + "s).");
+    }
   }
 }
 
@@ -257,9 +316,133 @@ ${groupVar.get(g)}.Name = ${luaStr(g)}
 ${groupVar.get(g)}.Parent = model`);
 }
 
+/* ------------------------------------------------------ émission des parts --
+   Deux écritures pour exactement la même géométrie. `compact` sort une table de
+   données parcourue par une boucle : c'est ce qui fait tenir un modèle de 600
+   parts sous le plafond de 200 000 caractères d'une source de script Roblox. */
+const SHAPE_IDX = { Block: 1, Cylinder: 2, Ball: 3, Wedge: 4, CornerWedge: 5 };
+const compact = COMPACT === null ? model.parts.length > 120 : COMPACT;
+
+function luaCompact() {
+  const mats = [...new Set(model.parts.map((p) => p.material || "SmoothPlastic"))];
+  const idxMat = new Map(mats.map((m, i) => [m, i + 1]));
+  const idxGrp = new Map(groupNames.map((g, i) => [g, i + 1]));
+  const lignes = model.parts.map((p) => {
+    const extra = [];
+    if (p.rotation && p.rotation.some((v) => v)) extra.push("r={" + p.rotation.map(fmt).join(",") + "}");
+    if (p.transparency) extra.push("t=" + fmt(p.transparency));
+    if (p.collide === false) extra.push("c=false");
+    return "{" + [
+      luaStr(p.name), SHAPE_IDX[p.shape], p.group ? idxGrp.get(p.group) : 0,
+      ...p.size.map(fmt), ...p.position.map(fmt), ...p.color,
+      idxMat.get(p.material || "SmoothPlastic"),
+      ...(extra.length ? ["{" + extra.join(",") + "}"] : []),
+    ].join(",") + "}";
+  });
+  return `
+-- Parts en table plutôt qu'en code : une source de script Roblox est plafonnée
+-- à 200 000 caractères, et un modèle de plusieurs centaines de parts écrit
+-- bloc par bloc ne passe pas. Colonnes :
+--   1 nom · 2 forme · 3 groupe (0 = racine) · 4-6 taille · 7-9 position
+--   10-12 couleur RGB · 13 matériau · 14 (facultatif) {r=rotation, t=transparence, c=collision}
+local CLASSE = {"Part", "Part", "Part", "WedgePart", "CornerWedgePart"}
+local FORME = {[2] = Enum.PartType.Cylinder, [3] = Enum.PartType.Ball}
+local MAT = {${mats.map((m) => "Enum.Material." + m).join(", ")}}
+local GROUPES = {${groupNames.map((g) => groupVar.get(g)).join(", ")}}
+local P = {
+${lignes.join(",\n")},
+}
+
+for _, d in ipairs(P) do
+	local p = Instance.new(CLASSE[d[2]])
+	p.Name = d[1]
+	local forme = FORME[d[2]]
+	if forme then p.Shape = forme end
+	p.Size = Vector3.new(d[4], d[5], d[6])
+	local o = d[14]
+	local cf = CFrame.new(d[7], d[8], d[9])
+	if o and o.r then
+		cf = cf * CFrame.fromEulerAnglesXYZ(math.rad(o.r[1]), math.rad(o.r[2]), math.rad(o.r[3]))
+	end
+	if d[2] == 5 then cf = cf * CORNER_FIX end
+	p.CFrame = origin * cf
+	p.Color = Color3.fromRGB(d[10], d[11], d[12])
+	p.Material = MAT[d[13]]
+	p.Transparency = (o and o.t) or 0
+	p.Anchored = true
+	p.CanCollide = not (o and o.c == false)
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = d[3] == 0 and model or GROUPES[d[3]]
+end`;
+}
+
 luaBody.push("");
-for (const p of model.parts) {
-  luaBody.push(luaPart(p, p.group ? groupVar.get(p.group) : "model"));
+if (compact) {
+  luaBody.push(luaCompact());
+} else {
+  for (const p of model.parts) {
+    luaBody.push(luaPart(p, p.group ? groupVar.get(p.group) : "model"));
+  }
+}
+
+/* ------------------------------------ émetteurs de particules (si présents) */
+function luaEmitter(e) {
+  const c = e.color || [255, 255, 255];
+  const c2 = e.colorEnd || c;
+  const col = v => `Color3.fromRGB(${v[0]}, ${v[1]}, ${v[2]})`;
+  const seq = (v, d0, d1) => {
+    const a = v ? v[0] : d0, b = v ? v[1] : d1;
+    return `NumberSequence.new(${fmt(a)}, ${fmt(b)})`;
+  };
+  const rng = (v, d0, d1) => `NumberRange.new(${fmt(v ? v[0] : d0)}, ${fmt(v ? v[1] : d1)})`;
+  const L = [
+    "do",
+    `\tlocal host = model:FindFirstChild(${luaStr(e.parent)}, true)`,
+    `\tassert(host, "[HyperBlox] emitter ${e.name} : part ${e.parent} introuvable")`,
+  ];
+  if (e.offset) {
+    L.push(
+      `\tlocal att = Instance.new("Attachment")`,
+      `\tatt.Name = ${luaStr(e.name + "_At")}`,
+      `\tatt.Position = Vector3.new(${e.offset.map(fmt).join(", ")})`,
+      `\tatt.Parent = host`,
+      `\thost = att`,
+    );
+  }
+  L.push(
+    `\tlocal fx = Instance.new("ParticleEmitter")`,
+    `\tfx.Name = ${luaStr(e.name)}`,
+    `\tfx.Color = ColorSequence.new(${col(c)}, ${col(c2)})`,
+    `\tfx.Size = ${seq(e.size, 1, 1)}`,
+    `\tfx.Transparency = ${seq(e.transparency, 0, 1)}`,
+    `\tfx.Lifetime = ${rng(e.lifetime, 1, 1)}`,
+    `\tfx.Speed = ${rng(e.speed, 5, 5)}`,
+    `\tfx.Rotation = ${rng(e.rotation, 0, 0)}`,
+    `\tfx.RotSpeed = ${rng(e.rotSpeed, 0, 0)}`,
+    `\tfx.Rate = ${fmt(e.rate ?? 20)}`,
+    `\tfx.SpreadAngle = Vector2.new(${fmt(e.spread ?? 0)}, ${fmt(e.spread ?? 0)})`,
+    `\tfx.Acceleration = Vector3.new(${(e.acceleration || [0, 0, 0]).map(fmt).join(", ")})`,
+    `\tfx.Drag = ${fmt(e.drag ?? 0)}`,
+    `\tfx.LightEmission = ${fmt(e.lightEmission ?? 0)}`,
+    `\tfx.LightInfluence = ${fmt(e.lightInfluence ?? 0)}`,
+    `\tfx.ZOffset = ${fmt(e.zoffset ?? 0)}`,
+  );
+  if (e.texture) L.push(`\tfx.Texture = ${luaStr(e.texture)}`);
+  if (e.shape) L.push(`\tfx.Shape = Enum.ParticleEmitterShape.${e.shape}`);
+  if (e.shapeInOut) L.push(`\tfx.ShapeInOut = Enum.ParticleEmitterShapeInOut.${e.shapeInOut}`);
+  if (e.orientation) L.push(`\tfx.Orientation = Enum.ParticleOrientation.${e.orientation}`);
+  if (e.emissionDirection) L.push(`	fx.EmissionDirection = Enum.NormalId.${e.emissionDirection}`);
+  L.push(
+    `\tfx.Enabled = ${e.enabled === true}`,
+    `\tfx.Parent = host`,
+    "end",
+  );
+  return L.join("\n");
+}
+if ((model.emitters || []).length) {
+  luaBody.push("\n-- émetteurs de particules");
+  for (const e of model.emitters) luaBody.push(luaEmitter(e));
 }
 
 /* ------------------------------------ module d'animations (si présent) */
@@ -271,7 +454,10 @@ function jsonToLua(v, indent) {
   }
   if (v && typeof v === "object") {
     const entries = Object.entries(v).filter(([, x]) => x !== undefined);
-    return "{\n" + entries.map(([k, x]) => pad1 + k + " = " + jsonToLua(x, indent + 1)).join(",\n") + ",\n" + pad + "}";
+    // les clés libres (noms d'animation dans `windows`) ne sont pas toujours des
+    // identifiants Lua valides — les mettre entre crochets au besoin
+    const luaKey = k => (/^[A-Za-z_]\w*$/.test(k) ? k : "[" + luaStr(k) + "]");
+    return "{\n" + entries.map(([k, x]) => pad1 + luaKey(k) + " = " + jsonToLua(x, indent + 1)).join(",\n") + ",\n" + pad + "}";
   }
   if (typeof v === "string") return luaStr(v);
   if (typeof v === "number") return fmt(v);
@@ -299,16 +485,77 @@ if (model.animations && model.animations.length) {
 --   anim.stop()                                -- fige la pose courante
 --   anim.reset()                               -- retour à la pose de base
 --   anim.list()                                -- noms disponibles
+--   anim.fx("NomEmetteur", true)               -- forcer un émetteur de particules
+--   anim.fxOff()                               -- couper tous les émetteurs pilotés
+--   anim.parts("NomAnimation")                 -- les parts que l'anim fait bouger
+--
+-- Le modèle PEUT se déplacer pendant la lecture : tout est exprimé dans le
+-- repère du PrimaryPart (le « Root »), relu à chaque image. Déplacer, tourner
+-- ou incliner le Root emmène l'animation avec lui. Deux conditions : que le
+-- Root ne soit lui-même la cible d'aucune track, et que les parts animées
+-- soient ANCRÉES — le player leur écrit un CFrame absolu à chaque image, une
+-- soudure se battrait avec lui (cf. parts(), qui dit lesquelles).
 
 local RunService = game:GetService("RunService")
 
 local ANIMS = ${jsonToLua(animsForLua, 0)}
+
+-- émetteurs de particules pilotés par les animations : { nom, fenêtres [tOn, tOff] }
+local FX = ${jsonToLua((model.emitters || []).filter(e => e.windows && Object.keys(e.windows).length)
+  .map(e => ({ name: e.name, windows: e.windows })), 0)}
 
 local model = script.Parent
 local M = {}
 local conn = nil
 local bases = nil
 local originCF = nil
+-- Les pivots des tracks sont en unités du model.json. Si le modèle a été
+-- redimensionné (ScaleTo — mutations, mise à l'échelle d'une scène), il faut
+-- les mettre à la même échelle, sinon les rotations tournent autour d'un point
+-- trop lointain et les parts se dispersent.
+local echelle = 1
+
+local fxCache = nil
+local function fxInstances()
+	if fxCache then return fxCache end
+	fxCache = {}
+	for _, f in ipairs(FX) do
+		local inst = model:FindFirstChild(f.name, true)
+		if inst then table.insert(fxCache, { inst = inst, windows = f.windows }) end
+	end
+	return fxCache
+end
+
+-- allume/éteint les émetteurs selon les fenêtres de l'animation en cours.
+-- Un émetteur sans fenêtre pour cette animation n'est jamais touché (ex. le feu
+-- permanent d'un brasero reste allumé pendant la fusion).
+local function applyFx(animName, t)
+	for _, f in ipairs(fxInstances()) do
+		local wins = f.windows[animName]
+		if wins then
+			local on = false
+			for _, w in ipairs(wins) do
+				if t >= w[1] and t <= w[2] then on = true; break end
+			end
+			if f.inst.Enabled ~= on then f.inst.Enabled = on end
+		end
+	end
+end
+
+function M.fx(name, on)
+	for _, f in ipairs(fxInstances()) do
+		if f.inst.Name == name then f.inst.Enabled = on ~= false return true end
+	end
+	local inst = model:FindFirstChild(name, true)
+	if inst and inst:IsA("ParticleEmitter") then inst.Enabled = on ~= false return true end
+	return false
+end
+
+function M.fxOff()
+	for _, f in ipairs(fxInstances()) do
+		if f.inst.Enabled then f.inst.Enabled = false end
+	end
+end
 
 local EASING = {
 	linear = function(u) return u end,
@@ -365,13 +612,17 @@ end
 local function ensureCapture()
 	if bases then return end
 	originCF = model.PrimaryPart.CFrame
+	local ok, s = pcall(function() return model:GetScale() end)
+	echelle = (ok and type(s) == "number" and s > 0) and s or 1
 	bases = {}
 	for _, a in ipairs(ANIMS) do
 		for _, tr in ipairs(a.tracks) do
 			if not bases[tr] then
 				local parts = targetParts(tr.target)
 				local cfs = {}
-				for i, p in ipairs(parts) do cfs[i] = p.CFrame end
+				-- Poses de base RELATIVES au Root, et non absolues : c'est ce qui
+				-- laisse le modèle bouger pendant la lecture.
+				for i, p in ipairs(parts) do cfs[i] = originCF:Inverse() * p.CFrame end
 				bases[tr] = { parts = parts, cframes = cfs }
 			end
 		end
@@ -399,15 +650,16 @@ local function sampleTrack(tr, t)
 	return rot, pos
 end
 
--- transform d'une track à t : T(pivot+pos) * R * T(-pivot), conjugué par
--- l'origine du modèle — identique au wrapper de pivot de preview.html
+-- transform d'une track à t : T(pivot+pos) * R * T(-pivot), exprimé dans le
+-- repère du Root — identique au wrapper de pivot de preview.html
 local function trackTransform(tr, t)
 	local rot, pos = sampleTrack(tr, t)
 	local pv = tr.pivot
-	local T = CFrame.new(pv[1] + pos[1], pv[2] + pos[2], pv[3] + pos[3])
+	local e = echelle
+	local T = CFrame.new((pv[1] + pos[1]) * e, (pv[2] + pos[2]) * e, (pv[3] + pos[3]) * e)
 		* CFrame.fromEulerAnglesXYZ(math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3]))
-		* CFrame.new(-pv[1], -pv[2], -pv[3])
-	return originCF * T * originCF:Inverse()
+		* CFrame.new(-pv[1] * e, -pv[2] * e, -pv[3] * e)
+	return T
 end
 
 local function apply(anim, t)
@@ -426,9 +678,30 @@ local function apply(anim, t)
 			end
 		end
 	end
+	-- Le repère est relu À CHAQUE IMAGE sur le Root : déplacer le modèle suffit
+	-- à emmener l'animation avec lui, sans rien recapturer.
+	local racine = model.PrimaryPart.CFrame
 	for p, T in pairs(perPart) do
-		p.CFrame = T * baseOf[p]
+		p.CFrame = racine * T * baseOf[p]
 	end
+	applyFx(anim.name, t)
+end
+
+-- Les parts qu'une animation fait bouger. Utile à qui déplace un modèle en
+-- cours de lecture : celles-là doivent être ANCRÉES (le player leur écrit un
+-- CFrame absolu à chaque image), les autres se soudent au support qui porte le
+-- modèle. Souder une part animée, c'est la faire trembler entre deux maîtres.
+function M.parts(name)
+	local out, vus = {}, {}
+	for _, tr in ipairs(findAnim(name).tracks) do
+		for _, p in ipairs(targetParts(tr.target)) do
+			if not vus[p] then
+				vus[p] = true
+				table.insert(out, p)
+			end
+		end
+	end
+	return out
 end
 
 function M.list()
@@ -439,6 +712,7 @@ end
 
 function M.stop()
 	if conn then conn:Disconnect() conn = nil end
+	M.fxOff()
 end
 
 function M.sample(name, t)
@@ -451,8 +725,9 @@ end
 function M.reset()
 	M.stop()
 	if not bases then return end
+	local racine = model.PrimaryPart.CFrame
 	for _, b in pairs(bases) do
-		for i, p in ipairs(b.parts) do p.CFrame = b.cframes[i] end
+		for i, p in ipairs(b.parts) do p.CFrame = racine * b.cframes[i] end
 	end
 end
 
@@ -497,17 +772,38 @@ animModule.Parent = model`);
 }
 
 const animCount = (model.animations || []).length;
+const fxCount = (model.emitters || []).length;
 luaBody.push(`
 model.Parent = CONFIG.PARENT
-print(("[HyperBlox] %s construit : %d parts, %s studs${animCount ? ", " + animCount + " animation(s) — require(model.HyperBloxAnim).play(\\\"" + model.animations[0].name + "\\\")" : ""}"):format(
+print(("[HyperBlox] %s construit : %d parts, %s studs${fxCount ? ", " + fxCount + " emetteur(s) de particules" : ""}${animCount ? ", " + animCount + " animation(s) — require(model.HyperBloxAnim).play(\\\"" + model.animations[0].name + "\\\")" : ""}"):format(
 	MODEL_NAME, ${model.parts.length}, "${dims.map(d => fmt(d)).join(" x ")}"))`);
 
-writeFileSync(join(outDir, "build.lua"), luaBody.join("\n") + "\n");
+// `return true` : rend le script utilisable tel quel comme ModuleScript
+// (`require(...)`) — indispensable au-delà de ~50 Ko, la barre de commande de
+// Studio n'encaissant pas un collage de plusieurs milliers de lignes.
+luaBody.push("\nreturn true");
+
+const luaSrc = luaBody.join("\n") + "\n";
+writeFileSync(join(outDir, "build.lua"), luaSrc);
+
+// Le plafond de 200 000 caractères d'une source de script Roblox n'est pas une
+// recommandation : au-delà, le ModuleScript refuse la source. Mieux vaut
+// l'apprendre ici qu'en collant le script dans Studio.
+if (luaSrc.length > PLAFOND_SOURCE) {
+  warnings.push("build.lua fait " + luaSrc.length.toLocaleString("fr-FR") + " caractères, au-dessus du plafond "
+    + "de " + PLAFOND_SOURCE.toLocaleString("fr-FR") + " d'une source de script Roblox : il ne peut pas être poussé "
+    + "en ModuleScript" + (compact ? " même en compact — passer par serve.mjs + install-json.lua, qui transportent le model.json en données."
+      : ". Relancer avec --compact (environ 5× plus court)."));
+} else if (luaSrc.length > PLAFOND_SOURCE * 0.85) {
+  warnings.push("build.lua fait " + luaSrc.length.toLocaleString("fr-FR") + " caractères — proche du plafond de "
+    + PLAFOND_SOURCE.toLocaleString("fr-FR") + " ; quelques parts de plus et il ne passera plus en ModuleScript.");
+}
 
 /* ----------------------------------------------------------------- rapport */
 console.log("✓ " + model.name + " — " + model.parts.length + " parts, " +
   dims.map(d => d.toFixed(1)).join(" × ") + " studs" +
   (animCount ? ", " + animCount + " animation(s) : " + model.animations.map(a => a.name).join(", ") : ""));
 console.log("  → " + join(outDir, "preview.html"));
-console.log("  → " + join(outDir, "build.lua"));
+console.log("  → " + join(outDir, "build.lua") + "  (" + (compact ? "compact" : "lisible") + ", "
+  + luaSrc.length.toLocaleString("fr-FR") + " caractères)");
 if (warnings.length) console.log("⚠ Avertissements :\n  - " + warnings.join("\n  - "));

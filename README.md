@@ -3,9 +3,21 @@
 **Image → maquette 3D en HTML → modèle Roblox low-poly. Avec animations.**
 
 HyperRoblox fournit **HyperBlox**, un skill pour [Claude Code](https://claude.com/claude-code)
-qui transforme une image (concept art, photo, image IA) en modèle 3D Roblox style
-« studio low-poly », en passant par une maquette HTML interactive que vous validez
-avant de construire quoi que ce soit dans Roblox Studio.
+qui transforme une image (concept art, photo, image IA) en modèle 3D Roblox, en
+passant par une maquette HTML interactive que vous validez avant de construire
+quoi que ce soit dans Roblox Studio.
+
+Deux modes selon ce que vous faites :
+
+- **Low-poly studio** (défaut) — props, objets, décor. 5 à 35 parts, le charme
+  vient du dépouillement.
+- **Détaillé** — créatures, boss, ailes. 150 à 600 parts, avec une bibliothèque
+  de primitives de volume (chanfreins, fuseaux, membranes, plumes, écailles) et
+  un miroir exact pour ne modéliser qu'un côté.
+
+Et un second skill, **HyperBlox Finition**, qui rattrape ce qui reste « presque
+fini » : les faces confondues qui clignotent en jeu, les bouts de barre qui
+ressortent dans le vide, les escaliers sans contremarche.
 
 Même philosophie que les pipelines HTML-vers-vidéo ou HTML-vers-PowerPoint : un
 fichier de données unique est la **source de vérité**, la page HTML est la
@@ -45,11 +57,17 @@ Copier le dossier `hyperblox/` dans les skills de votre projet ou de votre machi
 
 ```powershell
 # par projet
-Copy-Item -Recurse hyperblox <votre-projet>/.claude/skills/hyperblox
+Copy-Item -Recurse hyperblox           <votre-projet>/.claude/skills/hyperblox
+Copy-Item -Recurse hyperblox-finition  <votre-projet>/.claude/skills/hyperblox-finition
 
 # ou global (toutes vos sessions Claude Code)
-Copy-Item -Recurse hyperblox ~/.claude/skills/hyperblox
+Copy-Item -Recurse hyperblox           ~/.claude/skills/hyperblox
+Copy-Item -Recurse hyperblox-finition  ~/.claude/skills/hyperblox-finition
 ```
+
+`hyperblox-finition` est facultatif mais recommandé : c'est lui qui pilote la
+passe de finition, invocable ensuite par `/hyperblox-finition`. Il s'appuie sur
+les scripts de `hyperblox/`, à installer dans tous les cas.
 
 Redémarrer la session Claude Code, puis demander par exemple :
 
@@ -75,7 +93,10 @@ Le générateur fonctionne aussi tout seul :
 # 1. écrire mon-modele/model.json   (schéma : hyperblox/references/part-schema.md)
 node hyperblox/scripts/build.mjs mon-modele
 # 2. ouvrir mon-modele/preview.html dans un navigateur
-# 3. coller mon-modele/build.lua dans la barre de commande de Roblox Studio
+# 3. contrôler la géométrie, et corriger ce qui est corrigeable
+node hyperblox/scripts/finition.mjs mon-modele
+node hyperblox/scripts/finition.mjs mon-modele --fix
+# 4. coller mon-modele/build.lua dans la barre de commande de Roblox Studio
 ```
 
 Pour essayer sans rien écrire : les exemples sont livrés déjà générés —
@@ -135,22 +156,81 @@ Documentation complète :
 - [`hyperblox/SKILL.md`](hyperblox/SKILL.md) — le workflow du skill
 - [`hyperblox/references/part-schema.md`](hyperblox/references/part-schema.md) — schéma et conventions géométriques
 - [`hyperblox/references/style-lowpoly.md`](hyperblox/references/style-lowpoly.md) — guide de style low-poly studio
+- [`hyperblox/references/style-detaille.md`](hyperblox/references/style-detaille.md) — mode détaillé : primitives de volume, ailes, budgets
 - [`hyperblox/references/animations.md`](hyperblox/references/animations.md) — animations, easings, recettes, API Lua
+- [`hyperblox/references/finition.md`](hyperblox/references/finition.md) — le catalogue des défauts géométriques
+
+## La passe de finition
+
+`build.mjs` ne valide que le **schéma** : un modèle peut être parfaitement
+valide et laid. `finition.mjs` regarde ce qui se passe **entre** les parts —
+c'est là que vit tout ce qui fait qu'un modèle a l'air « presque fini ».
+
+```bash
+node hyperblox/scripts/finition.mjs mon-modele          # rapport
+node hyperblox/scripts/finition.mjs mon-modele --fix    # + corrections sûres
+```
+
+| Contrôle | Ce qu'il attrape |
+|---|---|
+| `zfight` | deux faces confondues — **clignote en jeu sans jamais apparaître sur un rendu figé** |
+| `noyee` | une part enfermée dans une autre : invisible, coût de rendu pur |
+| `depassement` | un bout de barre qui ressort dans le vide après avoir traversé une masse |
+| `escalier` | une volée de marches sans contremarche : on voit dessous |
+| `orpheline` · `micro` | une part qui ne touche rien · une dimension sous le minimum Roblox |
+| `joint` · `grille` · `symetrie` | sur demande (`--tout`) : trop bruyants sur un modèle organique |
+
+Ce qu'il **ne** fait pas, volontairement : décaler deux panneaux d'une même
+coque. Quand deux parts sont à ras sur plusieurs axes — le fond et le mur d'un
+caisson — les pousser les fait dériver en diagonale sans jamais converger. Le
+script le dit et laisse le fichier intact : ce coin-là se restructure, il ne se
+décale pas.
+
+`--fix` refuse également d'écrire sur un `model.json` produit par un générateur :
+la correction serait perdue à la régénération suivante.
+
+## Modèles détaillés
+
+Au-delà de ~80 parts, écrire le `model.json` à la main devient un piège — non
+parce que c'est long, mais parce que plus rien n'est **modifiable** : changer
+l'angle d'une aile demanderait de recalculer trente positions. La source de
+vérité devient alors un générateur `gen-<slug>.mjs`, et
+[`hyperblox/lib/volume.mjs`](hyperblox/lib/volume.mjs) fournit le vocabulaire :
+
+```js
+import { fabriqueVolume } from "./hyperblox/lib/volume.mjs";
+const V = fabriqueVolume(add, { color: [120, 90, 70] });
+
+const cou = V.arc([0, 4, -1], [0, 8, -4], { creux: 1.4 });
+V.chaine("Cou", "Buste", cou, { section: [1.8, 0.7], cannele: true });
+const aile = V.membrane("AileG", "AileG", epaule, doigts, { creux: 0.5 });
+V.miroirX(aile);                       // l'autre aile, exacte
+```
+
+`biseau` (masse à arêtes rabattues), `croise`, `chaine`, `membrane`, `plumes`,
+`ecailles`, `pointe`, `miroirX`, `arc`, `courbe`. Détail et pièges :
+[`style-detaille.md`](hyperblox/references/style-detaille.md).
 
 ## Structure du dépôt
 
 ```
 hyperroblox/
-└── hyperblox/                  ← le skill (à copier dans .claude/skills/)
-    ├── SKILL.md                ← point d'entrée du skill
-    ├── references/             ← schéma, style low-poly, animations
-    ├── scripts/build.mjs       ← model.json → preview.html + build.lua
-    ├── templates/
-    │   ├── viewer.html         ← template du viewer 3D
-    │   └── vendor/three.min.js ← Three.js r147 vendoré (préview hors-ligne)
-    └── examples/
-        ├── treasure-chest/     ← coffre au trésor (couvercle animé)
-        └── coffre-fort/        ← coffre-fort (cadran + porte animés)
+├── hyperblox/                  ← le skill (à copier dans .claude/skills/)
+│   ├── SKILL.md                ← point d'entrée du skill
+│   ├── references/             ← schéma, styles low-poly et détaillé,
+│   │                             animations, catalogue de finition
+│   ├── lib/volume.mjs          ← primitives de volume (mode détaillé)
+│   ├── scripts/
+│   │   ├── build.mjs           ← model.json → preview.html + build.lua
+│   │   └── finition.mjs        ← contrôle géométrique + corrections
+│   ├── templates/
+│   │   ├── viewer.html         ← template du viewer 3D
+│   │   └── vendor/three.min.js ← Three.js r147 vendoré (préview hors-ligne)
+│   └── examples/
+│       ├── treasure-chest/     ← coffre au trésor (couvercle animé)
+│       └── coffre-fort/        ← coffre-fort (cadran + porte animés)
+└── hyperblox-finition/         ← second skill : la passe de finition guidée
+    └── SKILL.md
 ```
 
 Les `preview.html`, `build.lua` et `preview.png` des exemples sont des fichiers
@@ -160,11 +240,23 @@ générés, livrés pour la démo — ne les éditez pas à la main, modifiez le
 ## Limites connues
 
 - Formes de base uniquement (Block, Wedge, CornerWedge, Cylinder, Ball) — pas
-  de MeshPart, pas de CSG/unions. C'est un choix : le style low-poly « studio ».
-- Props et objets, pas de level design de maps entières ; pas de rigs
-  Motor6D/Animator (les animations bougent des Parts anchored par CFrame, ce
-  qui convient aux portes, couvercles, hélices… pas à un personnage à animer
-  dans l'éditeur d'animation Roblox).
+  de MeshPart, pas de CSG/unions. C'est un choix : tout reste visible dans la
+  préview HTML, re-colorable part par part et animable par le player. Le volume
+  s'obtient en assemblant des formes de base (voir `style-detaille.md`), pas en
+  changeant de primitive.
+- Props, objets et créatures, mais pas de level design de maps entières ; pas de
+  rigs Motor6D/Animator (les animations bougent des Parts anchored par CFrame,
+  ce qui convient aux portes, couvercles, ailes, membres… pas à un personnage à
+  animer dans l'éditeur d'animation Roblox).
+- **Plafond de 200 000 caractères** sur une source de script Roblox. `build.mjs`
+  bascule tout seul en écriture compacte au-delà de 120 parts (table de données
+  + boucle, ~5× plus court) et prévient si le fichier ne passe toujours pas —
+  auquel cas il faut transporter le `model.json` en données (un `StringValue`
+  n'a pas de plafond) plutôt qu'en code. Un modèle à animations lourdes y arrive
+  même en compact : c'est le module `HyperBloxAnim` embarqué qui pèse.
+- La passe de finition mesure la **géométrie**, pas le dessin. Un creux qu'on n'a
+  jamais rempli — dessous d'auvent, arrière de trône — ne déclenche aucun
+  constat : rien ne distingue « pas de part ici » de « pas de part ici exprès ».
 - L'orientation de base du `CornerWedgePart` n'est pas documentée par Roblox :
   au premier usage réel, comparer Studio vs préview et régler la constante
   `CORNER_FIX` (procédure dans `part-schema.md` § Calibration).

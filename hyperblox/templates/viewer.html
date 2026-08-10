@@ -266,7 +266,8 @@ const bsize = bbox.getSize(new THREE.Vector3());
 const bcenter = bbox.getCenter(new THREE.Vector3());
 document.getElementById("p-name").textContent = MODEL.name || "__MODEL_NAME__";
 document.getElementById("p-count").textContent =
-  MODEL.parts.length + " parts" + (groups.size ? " · " + groups.size + " groupes" : "");
+  MODEL.parts.length + " parts" + (groups.size ? " · " + groups.size + " groupes" : "")
+  + ((MODEL.emitters || []).length ? " · " + MODEL.emitters.length + " particules (Roblox seul)" : "");
 document.getElementById("p-dims").textContent =
   "L " + bsize.x.toFixed(1) + " × H " + bsize.y.toFixed(1) + " × P " + bsize.z.toFixed(1) + " studs";
 
@@ -430,23 +431,66 @@ const EASING = {
   }
 };
 
-const wrapperCache = new Map();
+const tousWrappers = [];
+// UN WRAPPER PAR TRACK, imbriqués dans l'ordre des tracks.
+//
+// ─── LA POSITION D'UN WRAPPER EST RELATIVE AU PIVOT DE SON PARENT ──────────
+// Elle était absolue, et le viewer divergeait alors du player Lua dès qu'une
+// pièce recevait DEUX tracks ou plus — c'est-à-dire tout membre articulé.
+// Le player compose T1·T2 avec Ti = T(pi + qi)·Ri·T(−pi), soit
+//     p1+q1 + R1·(p2−p1+q2) + R1R2·(P−p2).
+// L'ancien montage (w1 en p1, w2 en p2, objet en −p1−p2) donnait
+//     p1+q1 + R1·(p2+q2) + R1R2·(P−p1−p2),
+// d'où un écart de R1·(R2−I)·p1 : nul au repos, mais qui atteignait 3.6 studs
+// sur RaFleauSolaire pour un pivot de hanche à 7.2 studs et 29° de roulis
+// d'aile. À l'écran l'aile se détachait du corps et volait à côté — alors que
+// le modèle était juste, et que Studio l'aurait construit correctement.
+// En posant w_k à (p_k − p_{k−1}) et l'objet à (P − p_dernier), on retrouve
+// exactement la composition du player.
 function makeWrapper(obj, pivot) {
   const w = new THREE.Group();
-  w.position.set(pivot[0], pivot[1], pivot[2]);
+  const pp = obj.parent.userData.hbxPivot || [0, 0, 0];
+  w.userData.hbxPivot = pivot;
+  // base = position au repos du wrapper, dans le repère de son parent ;
+  // applyAnim y ajoute le décalage de la keyframe.
+  w.userData.hbxBase = [pivot[0] - pp[0], pivot[1] - pp[1], pivot[2] - pp[2]];
+  w.position.set(w.userData.hbxBase[0], w.userData.hbxBase[1], w.userData.hbxBase[2]);
   obj.parent.add(w);
   w.add(obj);
-  obj.position.sub(w.position);
+  // Marche aussi bien pour un groupe (position 0) que pour un mesh nommé
+  // (position absolue) : on retire le nouveau pivot et on rend l'ancien.
+  obj.position.set(
+    obj.position.x + pp[0] - pivot[0],
+    obj.position.y + pp[1] - pivot[1],
+    obj.position.z + pp[2] - pivot[2]
+  );
   return w;
 }
+// ─── UN WRAPPER PAR TRACK, JAMAIS MUTUALISÉ ───────────────────────────────
+// Les wrappers étaient mis en cache par (cible, pivot), toutes anims
+// confondues. Deux divergences avec le player Lua en découlaient :
+//
+// 1. La profondeur d'imbrication était figée par la PREMIÈRE anim à toucher
+//    une (cible, pivot). Une anim ultérieure introduisant un nouveau pivot sur
+//    une cible déjà enveloppée le recevait au plus PROFOND, alors que son ordre
+//    de tracks le voulait au-dessus. Sur DragonCinqTetes, Idle enveloppait
+//    chaque tête (respiration → cou → tête), puis Rugissement glissait le pivot
+//    de HANCHE sous la tête : les têtes tournaient autour d'un point à 44 studs
+//    de là, à l'intérieur de leur propre rotation, et partaient en vrille.
+// 2. Deux tracks d'une MÊME anim sur la même (cible, pivot) — ce que le player
+//    Lua multiplie — s'écrasaient sur un wrapper unique, la seconde gagnant.
+//
+// Le player fait le produit des transforms de l'anim COURANTE dans l'ordre du
+// JSON. Un wrapper par track, imbriqué dans ce même ordre, en est la traduction
+// littérale : aucune règle de partage à faire coïncider. Les wrappers des
+// autres anims restent sur le trajet, mais `resetPose` les remet à l'identité,
+// où ils ne font plus que retransmettre leur décalage de repos.
 function wrappersFor(track) {
-  const key = track.target + "|" + (track.pivot || [0, 0, 0]).join(",");
-  if (wrapperCache.has(key)) return wrapperCache.get(key);
   const pivot = track.pivot || [0, 0, 0];
   let list = [];
   if (groups.has(track.target)) list = [makeWrapper(groups.get(track.target), pivot)];
   else if (meshesByName.has(track.target)) list = meshesByName.get(track.target).map(m => makeWrapper(m, pivot));
-  wrapperCache.set(key, list);
+  tousWrappers.push(...list);
   return list;
 }
 for (const a of ANIMS) for (const tr of a.tracks) { tr._wrappers = wrappersFor(tr); tr._pivot = tr.pivot || [0, 0, 0]; }
@@ -471,15 +515,17 @@ function applyAnim(anim, t) {
     const { rot, pos } = sampleTrack(tr, t);
     const q = quatFromRobloxEuler(rot);
     for (const w of tr._wrappers) {
+      const b = w.userData.hbxBase;
       w.quaternion.copy(q);
-      w.position.set(tr._pivot[0] + pos[0], tr._pivot[1] + pos[1], tr._pivot[2] + pos[2]);
+      w.position.set(b[0] + pos[0], b[1] + pos[1], b[2] + pos[2]);
     }
   }
 }
 function resetPose() {
-  for (const [key, list] of wrapperCache) {
-    const pivot = key.split("|")[1].split(",").map(Number);
-    for (const w of list) { w.quaternion.identity(); w.position.set(pivot[0], pivot[1], pivot[2]); }
+  for (const w of tousWrappers) {
+    const b = w.userData.hbxBase;
+    w.quaternion.identity();
+    w.position.set(b[0], b[1], b[2]);
   }
 }
 
@@ -554,6 +600,17 @@ resize();
    ?anim=Nom&t=0.8   pose l'animation à t secondes
    ?anim=Nom&play=1  lance la lecture                                   */
 const urlp = new URLSearchParams(location.search);
+/* Caméra pilotable par URL (screenshots ciblés) :
+   ?theta=<deg>   azimut, 0 = pile devant (-Z), 90 = côté droit
+   ?phi=<deg>     élévation, 90 = à hauteur du sol, 15 = vue de dessus
+   ?dist=<studs>  distance à la cible
+   ?ty=<studs>    hauteur du point visé (défaut : centre du modèle)          */
+if (urlp.has("theta")) orbit.theta = Math.PI - (parseFloat(urlp.get("theta")) || 0) * Math.PI / 180;
+if (urlp.has("phi")) orbit.phi = Math.max(0.05, Math.min(Math.PI - 0.05, (parseFloat(urlp.get("phi")) || 0) * Math.PI / 180));
+if (urlp.has("dist")) orbit.radius = parseFloat(urlp.get("dist")) || orbit.radius;
+if (urlp.has("tx")) orbit.target.x = parseFloat(urlp.get("tx")) || 0;
+if (urlp.has("ty")) orbit.target.y = parseFloat(urlp.get("ty")) || 0;
+if (urlp.has("tz")) orbit.target.z = parseFloat(urlp.get("tz")) || 0;
 if (urlp.get("anim") && ANIMS.length) {
   selectAnim(urlp.get("anim"));
   aSelect.value = urlp.get("anim");
