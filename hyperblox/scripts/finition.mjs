@@ -143,6 +143,7 @@ const inv = (q) => [-q[0], -q[1], -q[2], q[3]];
 const addV = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const subV = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const unitV = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 
 /* Boîtes orientées : un descripteur par part, calculé une fois. */
 const B = model.parts.map((p, i) => {
@@ -577,13 +578,155 @@ if (actif("escalier")) {
   }
 }
 
-/* ------------------------------------------------------------- orpheline -- */
+/* ------------------------------------------------------------- orpheline --
+   Une part qui ne touche RIEN. Sur un arbre, une branche ou une touffe de
+   mousse qui flotte à côté du tronc ne passe jamais pour une intention : c'est
+   le défaut qui saute aux yeux, et son ombre portée le dénonce encore mieux que
+   le modèle.
+
+   Ce test regardait la proximité des BOÎTES ENGLOBANTES, et ratait donc
+   l'essentiel : la boîte d'un tronc incliné est énorme, si bien qu'une mousse
+   flottant à 2.5 studs de lui était comptée comme « en contact ». On compare
+   maintenant les SOLIDES, par échantillons, dans les deux sens — les points
+   d'A dans B et ceux de B dans A, sans quoi une petite part collée au flanc
+   d'une grosse passerait pour détachée. */
+const CONTACT = 0.12;                      // jeu toléré avant de parler de vide
+
+function echantillons(b) {
+  if (b.ech) return b.ech;
+  const pts = [[0, 0, 0]];
+  for (let a = 0; a < 3; a++) for (const s of [-1, 1]) {
+    const f = [0, 0, 0]; f[a] = s * b.half[a]; pts.push(f);
+  }
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    pts.push([b.half[0] * sx, b.half[1] * sy, b.half[2] * sz]);
+  }
+  // Une barre longue n'est décrite ni par ses coins ni par ses faces : on la
+  // jalonne sur sa plus grande dimension, sinon un contact en son milieu passe
+  // inaperçu.
+  const axe = b.p.size.indexOf(Math.max(...b.p.size));
+  const n = Math.ceil(b.p.size[axe] / 0.6);
+  for (let k = 1; k < n; k++) {
+    const l = [0, 0, 0];
+    l[axe] = -b.half[axe] + (k / n) * b.p.size[axe];
+    pts.push(l);
+  }
+  b.ech = pts.map((l) => versMonde(b, l));
+  return b.ech;
+}
+
+function seTouchent(a, b, decale = [0, 0, 0]) {
+  for (const p of echantillons(a)) {
+    if (dans(b, [p[0] + decale[0], p[1] + decale[1], p[2] + decale[2]], CONTACT)) return true;
+  }
+  for (const p of echantillons(b)) {
+    if (dans(a, [p[0] - decale[0], p[1] - decale[1], p[2] - decale[2]], CONTACT)) return true;
+  }
+  return false;
+}
+
 if (actif("orpheline")) {
+  // « Ne touche rien » ne suffit pas comme critère : une mousse accrochée à une
+  // branche qui, elle, flotte, touche bien quelque chose — et vole quand même.
+  // La bonne question est la CONNEXITÉ : cette part tient-elle, de proche en
+  // proche, au corps du modèle posé au sol ? On construit donc le graphe des
+  // contacts, on part des parts qui touchent le sol, et tout ce que le parcours
+  // n'atteint pas s'envole, en bloc.
+  const lien = B.map(() => []);
+  for (let i = 0; i < B.length; i++) {
+    for (let j = i + 1; j < B.length; j++) {
+      if (!aabbSeCroisent(B[i], B[j], CONTACT)) continue;
+      if (seTouchent(B[i], B[j])) { lien[i].push(j); lien[j].push(i); }
+    }
+  }
+  // `"flotte": true` déclare qu'une part lévite EXPRÈS — un éclat du Néant, un
+  // satellite de cristal, le fût d'un obélisque flottant. Sans ce marqueur il
+  // faudrait deviner l'intention au nom de la part, ce qui marche jusqu'au jour
+  // où ça ne marche plus.
+  // Une part déclarée flottante est un ANCRAGE au même titre que le sol : elle
+  // ne se signale pas, et surtout elle PORTE ce qu'on lui accroche. Un obélisque
+  // qui lévite entraîne son anneau avec lui.
+  const declareeFlottante = (b) => b.p.flotte === true;
+  const relie = new Set();
+  const pile = B.filter((b) => b.min[1] <= 0.05 || declareeFlottante(b)).map((b) => b.i);
+  pile.forEach((i) => relie.add(i));
+  while (pile.length) {
+    for (const j of lien[pile.pop()]) if (!relie.has(j)) { relie.add(j); pile.push(j); }
+  }
+
+  // Les parts détachées se regroupent en amas : un amas = une pièce du modèle
+  // qui s'est décrochée d'un bloc, et qui doit être recollée d'un bloc.
+  const vus = new Set();
   for (const b of B) {
-    if (b.min[1] <= 0.05 || voisins[b.i].length) continue;
-    ajout("orpheline", "info",
-      `${b.p.name} ne touche aucune autre part (flotte à ${r3(b.min[1])} stud du sol) — volontaire ?`,
-      [b.p.name]);
+    if (relie.has(b.i) || vus.has(b.i)) continue;
+    const amas = [b.i]; vus.add(b.i);
+    for (let k = 0; k < amas.length; k++) {
+      for (const j of lien[amas[k]]) if (!vus.has(j)) { vus.add(j); amas.push(j); }
+    }
+    // Vers quoi le recoller, et de combien ? On cherche la part RELIÉE la plus
+    // proche, puis le déplacement minimal qui rétablit le contact, par
+    // dichotomie sur la direction qui les sépare.
+    // On cherche le couple de POINTS les plus proches, pas de centres : viser le
+    // centre d'une pièce longue et fine fait rater sa surface, et le
+    // déplacement calculé n'a alors aucun sens.
+    let cible = null, dmin = Infinity;
+    for (const i of amas) {
+      for (const o of B) {
+        if (!relie.has(o.i)) continue;
+        if (Math.hypot(...subV(o.c, B[i].c)) > dmin + 12) continue;   // filtre grossier
+        for (const pa of echantillons(B[i])) for (const pb of echantillons(o)) {
+          const d = Math.hypot(...subV(pb, pa));
+          if (d < dmin) { dmin = d; cible = { de: B[i], vers: o, dir: unitV(subV(pb, pa)) }; }
+        }
+      }
+    }
+    const noms = amas.map((i) => B[i].p.name);
+    const liste = noms.slice(0, 4).join(", ") + (noms.length > 4 ? `… (+${noms.length - 4})` : "");
+    if (!cible) {
+      ajout("orpheline", "moyen", `${liste} : rien à quoi rattacher — le modèle est en deux morceaux`, noms);
+      continue;
+    }
+    const dir = cible.dir;
+    const contactA = (t) => seTouchent(cible.de, cible.vers, [dir[0] * t, dir[1] * t, dir[2] * t]);
+    // La dichotomie n'a de sens que si le contact est ACQUIS à la borne haute.
+    // Aller vers le centre d'une voisine longue et fine peut la dépasser sans
+    // jamais la toucher : sans cette vérification la recherche convergeait
+    // vers 0, annonçait « 0 stud de vide » et ne corrigeait rien — en boucle.
+    let lo = 0, hi = Math.max(dmin * 1.2, 0.2), atteignable = contactA(hi);
+    for (let e = 0; !atteignable && e < 4; e++) { hi *= 1.7; atteignable = contactA(hi); }
+    if (!atteignable) {
+      ajout("orpheline", "grave",
+        `${liste} — détaché du modèle, et le rapprocher de ${cible.vers.p.name} ne suffit pas à le raccrocher : `
+        + "à replacer à la main (ou à rattacher par une pièce intermédiaire)",
+        noms);
+      continue;
+    }
+    for (let k = 0; k < 16; k++) {
+      const mid = (lo + hi) / 2;
+      if (contactA(mid)) hi = mid; else lo = mid;
+    }
+    const jeu = r3(hi);
+    // Un déplacement nul n'est pas une correction. Quand la dichotomie rend
+    // ~0 alors que le parcours de connexité, lui, considère la part comme
+    // décrochée, les deux mesures se contredisent : plutôt que de proposer une
+    // correction qui ne ferait rien — et de faire boucler la passe sans jamais
+    // converger — on le dit et on renvoie la décision au modeleur.
+    if (jeu < 0.01) {
+      ajout("orpheline", "grave",
+        `${liste} — décroché du modèle, mais à la limite du contact avec ${cible.vers.p.name} : `
+        + "l'écart est trop faible pour être rattrapé par un déplacement. À rapprocher franchement à la main.",
+        noms);
+      continue;
+    }
+    ajout("orpheline", "grave",
+      `${liste} — ${amas.length === 1 ? "flotte" : amas.length + " parts détachées du modèle"} : `
+      + `${jeu} stud de vide jusqu'à ${cible.vers.p.name}. Une branche qui vole se voit encore mieux à son ombre.`,
+      noms,
+      jeu > dmin ? null : () => {
+        for (const i of amas) {
+          B[i].p.position = B[i].p.position.map((v, k) => r3(v + dir[k] * jeu));
+        }
+      });
   }
 }
 

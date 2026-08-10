@@ -23,14 +23,31 @@ ce que montre la préview est ce que Studio construira.
       "color": [121, 85, 58],
       "material": "SmoothPlastic",
       "transparency": 0,
-      "collide": true
+      "collide": true,
+      "flotte": false
     }
   ]
 }
 ```
 
 Champs optionnels avec défauts : `rotation` `[0,0,0]`, `material` `"SmoothPlastic"`,
-`transparency` `0`, `collide` `true`, `group` aucun.
+`transparency` `0`, `collide` `true`, `group` aucun, `flotte` `false`.
+
+### `flotte` — « cette part lévite EXPRÈS »
+
+Ce champ ne change **rien** à la construction : c'est une déclaration
+d'intention, lue par la passe de finition. Sans lui, le contrôle de connexité
+signale comme décrochée toute part qui ne tient à rien — ce qui est le
+comportement voulu pour une branche, et faux pour un éclat en lévitation ou le
+fût d'un obélisque flottant.
+
+Une part `flotte` est un **ancrage** au même titre que le sol : elle ne se
+signale pas, et elle PORTE ce qu'on lui accroche (un obélisque qui lévite
+entraîne son anneau avec lui).
+
+À réserver aux cas où la lévitation est le sujet. Deviner l'intention au nom de
+la part (`EclatLevitant`, `Satellite`…) marche jusqu'au jour où ça ne marche
+plus.
 
 ## Conventions (identiques préview ↔ Studio)
 

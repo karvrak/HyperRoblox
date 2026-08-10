@@ -100,10 +100,38 @@ trois faces visibles — le nez de la marche du dessus et les deux flancs. Posé
 un z-fighting. En hauteur au contraire elle **mord de 0.05** sur les deux
 marches, ce qui ferme le joint pour de bon.
 
-### `orpheline` — une part qui ne touche rien · information
+### `orpheline` — une part qui vole · **grave**
 
-Elle flotte. Souvent volontaire (un cristal en lévitation, une braise), parfois
-une pièce oubliée à une position ancienne. Jamais corrigé automatiquement.
+Une branche qui vole ne passe jamais pour une intention, et son **ombre portée**
+la dénonce avant le modèle lui-même.
+
+Le critère n'est pas « touche-t-elle quelque chose ? » — une mousse accrochée à
+une branche qui flotte touche bien quelque chose, et vole quand même. C'est la
+**connexité** : cette part tient-elle, de proche en proche, au corps posé au
+sol ? On construit le graphe des contacts, on part des parts qui touchent le
+sol (et de celles déclarées `flotte`), et tout ce que le parcours n'atteint pas
+s'envole — signalé **en amas**, parce qu'une pièce décrochée l'est en bloc.
+
+Deux pièges qui ont coûté cher, et que le contrôle évite maintenant :
+
+- **comparer les solides, pas les boîtes englobantes.** La boîte d'un tronc
+  incliné est énorme : une mousse flottant à 2.5 studs de lui passait pour « en
+  contact ». On échantillonne les deux parts, dans les deux sens — les points
+  d'A dans B *et* ceux de B dans A, sans quoi une petite part collée au flanc
+  d'une grosse passerait pour détachée ;
+- **viser le point le plus proche, pas le centre.** Pour recoller un amas, on
+  cherche le couple de points les plus proches puis le déplacement minimal qui
+  rétablit le contact, par dichotomie. Viser le centre d'une pièce longue et
+  fine la rate, et le déplacement calculé n'a alors aucun sens.
+
+*Correction* : translater l'amas entier du jeu mesuré. Si ce déplacement est
+quasi nul alors que la connexité dit « décroché », les deux mesures se
+contredisent — le script le dit et renvoie la décision au modeleur plutôt que
+de proposer une correction qui ne ferait rien, et de faire boucler la passe.
+
+⚠ La correction **répare, elle n'embellit pas** : elle colle la branche au
+tronc. Rien ne vole plus, mais une pièce recollée au plus court peut être
+tassée. Le vrai geste, ensuite, est de la reposer.
 
 ### `micro` — dimension sous 0.05 · **grave**
 

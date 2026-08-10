@@ -177,7 +177,8 @@ node hyperblox/scripts/finition.mjs mon-modele --fix    # + corrections sûres
 | `noyee` | une part enfermée dans une autre : invisible, coût de rendu pur |
 | `depassement` | un bout de barre qui ressort dans le vide après avoir traversé une masse |
 | `escalier` | une volée de marches sans contremarche : on voit dessous |
-| `orpheline` · `micro` | une part qui ne touche rien · une dimension sous le minimum Roblox |
+| `orpheline` | une part qui **vole** — critère de connexité au corps posé au sol, pas « touche quelque chose » |
+| `micro` | une dimension sous le minimum Roblox |
 | `joint` · `grille` · `symetrie` | sur demande (`--tout`) : trop bruyants sur un modèle organique |
 
 Ce qu'il **ne** fait pas, volontairement : décaler deux panneaux d'une même
@@ -188,6 +189,28 @@ décale pas.
 
 `--fix` refuse également d'écrire sur un `model.json` produit par un générateur :
 la correction serait perdue à la régénération suivante.
+
+Une part qui lévite **exprès** — un éclat en suspension, le fût d'un obélisque
+flottant — se déclare avec `"flotte": true`. Le champ ne change rien à la
+construction : il dit au contrôle que la lévitation est le sujet, et fait de la
+part un ancrage qui porte ce qu'on lui accroche.
+
+## Captures de contrôle
+
+```bash
+node hyperblox/scripts/shots.mjs mon-modele            # shot-3q.png à côté du model.json
+node hyperblox/scripts/shots.mjs mon-modele --vue face
+node hyperblox/scripts/shots.mjs mes-modeles           # tout un lot
+```
+
+Passer par ce script plutôt que par Chrome à la main : il encode les espaces du
+chemin (sinon Chrome sort en code 13, sans message ni fichier), casse le **cache
+disque** de Chrome (qui resert un `file://` déjà vu — la capture montre alors
+l'ancien modèle en affichant fièrement son ancien nombre de parts) et vérifie
+que le PNG a bien été réécrit.
+
+⚠ Une **silhouette** se juge de face et de profil, à plat. Une vue de trois
+quarts montre le détail, jamais la ligne d'ensemble.
 
 ## Modèles détaillés
 
@@ -222,7 +245,8 @@ hyperroblox/
 │   ├── lib/volume.mjs          ← primitives de volume (mode détaillé)
 │   ├── scripts/
 │   │   ├── build.mjs           ← model.json → preview.html + build.lua
-│   │   └── finition.mjs        ← contrôle géométrique + corrections
+│   │   ├── finition.mjs        ← contrôle géométrique + corrections
+│   │   └── shots.mjs           ← captures de contrôle (headless Chrome)
 │   ├── templates/
 │   │   ├── viewer.html         ← template du viewer 3D
 │   │   └── vendor/three.min.js ← Three.js r147 vendoré (préview hors-ligne)

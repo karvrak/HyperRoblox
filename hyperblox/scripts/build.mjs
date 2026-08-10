@@ -74,6 +74,11 @@ for (const [i, p] of (model.parts || []).entries()) {
     errors.push(id + " : material inconnu `" + p.material + "`.");
   if (p.transparency !== undefined && (typeof p.transparency !== "number" || p.transparency < 0 || p.transparency > 1))
     errors.push(id + " : `transparency` doit être entre 0 et 1.");
+  // `flotte` ne change RIEN à la construction : c'est une déclaration
+  // d'intention, lue par la passe de finition pour ne pas signaler comme
+  // « décrochée » une part qui lévite exprès.
+  if (p.flotte !== undefined && typeof p.flotte !== "boolean")
+    errors.push(id + " : `flotte` doit être un booléen (part qui lévite volontairement).");
   if (p.shape === "Ball" && p.size && (p.size[0] !== p.size[1] || p.size[1] !== p.size[2]))
     warnings.push(id + " : Ball non uniforme — Roblox rend une sphère sur la plus petite dimension.");
   if (p.shape === "Cylinder" && p.size && p.size[1] !== p.size[2])

@@ -114,22 +114,34 @@ Corriger toute erreur de validation et traiter les avertissements
 
 ### 3. Auto-vérifier avant de montrer
 
-Screenshot headless de la préview, à comparer avec l'image source :
+Captures de contrôle de la préview, à comparer avec l'image source :
 
 ```powershell
-& "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new --disable-gpu `
-  --no-first-run --disable-background-networking --disable-sync --disable-extensions `
-  "--user-data-dir=$env:TEMP\hyperblox-chrome" --window-size=1400,900 `
-  --virtual-time-budget=5000 --hide-scrollbars `
-  "--screenshot=<chemin-absolu>\shot.png" "file:///<chemin-absolu>/preview.html"
+node .claude/skills/hyperblox/scripts/shots.mjs hyperblox/<famille>/<slug>
+node .claude/skills/hyperblox/scripts/shots.mjs hyperblox/<famille>/<slug> --vue face
+node .claude/skills/hyperblox/scripts/shots.mjs hyperblox/<famille>            # tout un lot
 ```
+
+Le script pose le PNG à côté du `model.json` (`shot-3q.png`, `shot-face.png`…).
+**Passer par lui plutôt que par Chrome à la main** : il règle trois pièges qui
+se paient comptant — l'encodage des espaces du chemin (sans quoi Chrome sort en
+code 13, sans message et sans fichier), le **cache disque** (Chrome resert un
+`file://` déjà vu, et la capture montre l'ancien modèle en affichant fièrement
+son ancien nombre de parts), et la vérification que le PNG a bien été
+**réécrit** — sinon on relit tranquillement la capture d'avant.
 
 Lire le screenshot et s'auto-critiquer (checklist en fin de style-lowpoly) :
 silhouette, proportions, palette, parts inutiles. Ajuster le JSON et regénérer
 — 2 à 3 passes maximum avant de montrer.
 
+⚠ **Une silhouette se juge de FACE et de PROFIL, à plat.** Régler une pose en
+ne regardant qu'une vue de trois quarts est le meilleur moyen de tourner en
+rond : on y voit le détail, jamais la ligne d'ensemble. Sur une créature ou un
+boss, sortir `--vue face` et `--vue profil` à chaque itération, et ne juger le
+détail qu'une fois la ligne bonne.
+
 Pour une animation, screenshoter plusieurs temps via les paramètres d'URL
-(`preview.html?anim=Nom&t=0.7`) : pose de base à `t=0`, un temps intermédiaire,
+(`--params "?anim=Nom&t=0.7"`) : pose de base à `t=0`, un temps intermédiaire,
 pose finale à `t=duration` (détails : `references/animations.md`).
 
 La caméra se pilote aussi par l'URL — indispensable pour juger un modèle **tel
@@ -146,10 +158,11 @@ d'en bas) :
 
 Vue « joueur » type : `?theta=18&phi=87&dist=<1.2×largeur>&ty=6`.
 
-⚠ Chrome headless **se bloque avec `--virtual-time-budget`** sur cette préview
-(boucle `requestAnimationFrame` + temps virtuel = boucle infinie). L'omettre :
-le screenshot est pris au chargement, et la scène est déterministe (`spin`
-désactivé par défaut).
+Ces paramètres se passent au script via `--params`. (Détail interne, mais qui
+explique le script : Chrome headless **se bloque avec `--virtual-time-budget`**
+sur cette préview — boucle `requestAnimationFrame` + temps virtuel = boucle
+infinie. Le script ne l'utilise pas ; la scène est déterministe, `spin` étant
+désactivé par défaut.)
 
 ### 4. Valider avec l'utilisateur
 
