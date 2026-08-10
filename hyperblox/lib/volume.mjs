@@ -110,6 +110,25 @@ export const orientFromYX = (yA, xHint = [1, 0, 0]) => {
   };
 };
 
+// Orientation d'une part dont l'axe X LOCAL suit `xA`. Indispensable au
+// `Cylinder` de Roblox, dont la hauteur court le long de X local et non de Y :
+// sans ça, la bibliothèque ne savait poser un cylindre que debout ou couché sur
+// un axe du monde, et tout raccord courbe devait se faire en blocs facettés.
+export const orientFromXY = (xA, yHint = [0, 1, 0]) => {
+  const X = unit(xA);
+  let Y = sub3(yHint, mul3(X, dot3(yHint, X)));
+  if (len3(Y) < 1e-6) {
+    const alt = Math.abs(X[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+    Y = sub3(alt, mul3(X, dot3(alt, X)));
+  }
+  Y = unit(Y);
+  const Z = cross3(X, Y);
+  return {
+    rot: eulerXYZ([[X[0], Y[0], Z[0]], [X[1], Y[1], Z[1]], [X[2], Y[2], Z[2]]]),
+    X, Y, Z,
+  };
+};
+
 /* ------------------------------------------------------------- chemins -- */
 
 // Arc quadratique de `a` à `b`, bombé de `creux` studs vers `vers`
@@ -175,6 +194,46 @@ export function fabriqueVolume(add, defauts = {}) {
     // tronçons consécutifs. Sans lui, une chaîne montre ses articulations.
     return poser(nom, groupe, o.shape || "Block",
       [w, len3(u) + (o.rab ?? 0.15), e], mid3(a, b), { ...o, rotation: rot });
+  };
+
+  /* ---------------------------------------------------------------- tube --
+     Un CYLINDRE tendu entre deux points. Le pendant rond de `barre`. */
+  const tube = (nom, groupe, a, b, diam, o = {}) => {
+    const u = sub3(b, a);
+    const { rot } = orientFromXY(u, o.yHint || [0, 1, 0]);
+    return poser(nom, groupe, "Cylinder",
+      [len3(u) + (o.rab ?? 0), diam, diam], mid3(a, b), { ...o, rotation: rot });
+  };
+
+  /* --------------------------------------------------------------- boyau --
+     Un membre ROND qui suit une courbe : une suite de tubes, et une BILLE à
+     chaque articulation.
+     La bille n'est pas décorative, c'est tout l'intérêt : deux cylindres qui se
+     rencontrent en biais laissent un angle vide au coude — le défaut qui fait
+     « amateur » au premier coup d'œil, et qu'aucun contrôle géométrique ne
+     signale puisque rien ne s'y croise mal. La bille au diamètre du tube
+     comble le creux et rend le raccord continu.
+     `section` : nombre, [début, fin], ou (t) => diamètre. */
+  const boyau = (nom, groupe, points, o = {}) => {
+    const faites = [];
+    const prof = typeof o.section === "function"
+      ? o.section
+      : Array.isArray(o.section)
+        ? (t) => lerp(o.section[0], o.section[1], t)
+        : () => (o.section ?? 1);
+    const n = points.length - 1;
+    for (let i = 0; i < n; i++) {
+      const d0 = prof(i / n), d1 = prof((i + 1) / n);
+      faites.push(tube(nom + (i + 1), groupe, points[i], points[i + 1], (d0 + d1) / 2,
+        { ...o, rab: o.rab ?? 0.05 }));
+      // Bille aux articulations INTERNES, et à l'extrémité si on veut un bout
+      // arrondi (`cime`) — un cactus, un tentacule, un doigt finissent rond.
+      if (i < n - 1 || o.cime) {
+        faites.push(poser(nom + "Noeud" + (i + 1), groupe, "Ball",
+          [d1, d1, d1], points[i + 1], { ...o }));
+      }
+    }
+    return faites;
   };
 
   /* -------------------------------------------------------------- chaine --
@@ -432,7 +491,7 @@ export function fabriqueVolume(add, defauts = {}) {
   };
 
   return {
-    teinte, barre, chaine, croise, biseau, membrane, plumes, ecailles, pointe, miroirX,
-    arc, courbe, orientFromYX, lerp, lerp3, add3, sub3, mul3, unit, len3, cross3, mid3,
+    teinte, barre, tube, boyau, chaine, croise, biseau, membrane, plumes, ecailles, pointe, miroirX,
+    arc, courbe, orientFromYX, orientFromXY, lerp, lerp3, add3, sub3, mul3, unit, len3, cross3, mid3,
   };
 }
