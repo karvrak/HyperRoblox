@@ -228,9 +228,13 @@ export function fabriqueVolume(add, defauts = {}) {
         { ...o, rab: o.rab ?? 0.05 }));
       // Bille aux articulations INTERNES, et à l'extrémité si on veut un bout
       // arrondi (`cime`) — un cactus, un tentacule, un doigt finissent rond.
+      // La bille est un peu PLUS GROSSE que le tube (×1.07) : à diamètre égal,
+      // le bord du tube affleure exactement l'équateur de la bille et dessine
+      // un pli à chaque articulation — la couture qui fait « tuyau coudé ».
       if (i < n - 1 || o.cime) {
+        const db = d1 * (o.noeud ?? 1.07);
         faites.push(poser(nom + "Noeud" + (i + 1), groupe, "Ball",
-          [d1, d1, d1], points[i + 1], { ...o }));
+          [db, db, db], points[i + 1], { ...o }));
       }
     }
     return faites;

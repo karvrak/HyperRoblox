@@ -174,6 +174,37 @@ Deux familles, qui ne se construisent pas pareil :
 Dans les deux cas : **modéliser un seul côté, puis `miroirX`**. Les deux moitiés
 ne peuvent alors plus diverger, et la moitié du travail disparaît.
 
+## Casser le « cubique » — le lissage sans mesh
+
+Un modèle peut être riche en primitives et lire quand même « en cubes » de
+près. Les quatre causes, relevées sur un dragon de 980 parts, par ordre de
+rendement :
+
+1. **Une tête n'est jamais un block.** Crâne + museau = un `tour` **couché**
+   le long de l'axe du museau (`axe` incliné), profil de rayons qui s'affine
+   vers le nez. C'est le morceau que le joueur regarde en premier, et le
+   dernier qu'on pense à arrondir.
+2. **Un détail de peau est TANGENT à la surface.** Écaille, plaque, bosse :
+   orientation par la normale locale (`orientFromYX(normale, spin)`), spin
+   aléatoire autour d'elle seulement, une pointe d'inclinaison (±7°). Une
+   rotation aléatoire sur trois axes plante la moitié des pièces par la
+   tranche — l'effet « copeaux » qui ruine un flanc. Et le point de pose d'un
+   détail s'échantillonne sur le **squelette** (courbe + rayon du tronçon, au
+   milieu du tronçon), jamais sur des sphères estimées de tête.
+3. **La couture d'un membre = un segment trop long pour sa courbure.** Si un
+   `boyau`/`chaine` montre ses articulations, doubler les points de la courbe
+   — pas élargir les billes. (Les billes de `boyau` sont déjà 7 % plus
+   grosses que le tube : à diamètre égal, le bord du tube affleure l'équateur
+   de la bille et dessine un pli.)
+4. **Juger le rond dans Studio, pas sur la préview.** Le viewer facette les
+   cylindres et les billes ; Roblox les ombre lisse. Un `tour` qui montre ses
+   anneaux en capture est déjà lisse en jeu.
+
+Le plafond de cette approche est réel : des parts restent des parts. Si un
+projet exige des surfaces organiques parfaitement continues, c'est du
+MeshPart (Blender, EditableMesh) — hors périmètre HyperBlox, qui garde en
+échange la préview fidèle, la recoloration par part et l'animation Lua.
+
 ## Trois pièges qui ne pardonnent pas
 
 **Le miroir d'Euler.** Refléter trois angles en changeant des signes n'est exact
