@@ -184,23 +184,26 @@ rendement :
    le long de l'axe du museau (`axe` incliné), profil de rayons qui s'affine
    vers le nez, une bille au bout (la dernière tranche coupe net sinon).
    C'est le morceau que le joueur regarde en premier, et le dernier qu'on
-   pense à arrondir. Puis **habiller le lathe**, qui reste un tube sans ça :
-   bourrelet de sourcil au-dessus de chaque œil (`pointe` couchée sur le
-   crâne), rangée de bosses sur l'arête du museau (étroites et enfoncées,
-   sinon elles débordent en casquette), plaques de joue, couronne de cornes
-   secondaires, pointes de mâchoire. Les dents : fines et nombreuses (base
-   ≈ 0.1 pour une tête de 4 studs), deux crocs plus longs — des dents larges
-   lisent comme des touches de piano.
-2. **Un détail de peau est TANGENT à la surface, et ENFONCÉ À MOITIÉ.**
-   Écaille, plaque, bosse : orientation par la normale locale
-   (`orientFromYX(normale, spin)`), spin aléatoire autour d'elle seulement,
-   inclinaison légère (±3°). Une rotation aléatoire sur trois axes plante la
-   moitié des pièces par la tranche — l'effet « copeaux » qui ruine un flanc.
-   Et le centre se pose SUR la surface (moitié noyée, moitié saillante, donc
-   épaisseur ≈ 0.25) : posée au-dessus, une plaque tangente montre l'ombre
-   sous ses bords sur toute courbure — l'effet « autocollant qui se
-   décolle ». Le point de pose s'échantillonne sur le **squelette** (courbe +
-   rayon du tronçon, au milieu du tronçon), jamais sur des sphères estimées.
+   pense à arrondir. Puis **habiller le lathe** — mais avec PEU de formes,
+   grosses et cohérentes : pommettes et muscles de mâchoire (billes
+   mi-noyées), calotte plate, bourrelet de sourcil au-dessus de chaque œil,
+   UNE crête d'arête continue sur le museau, babines sombres le long des
+   mâchoires (c'est la ligne de gencive qui fait exister la gueule), orbites
+   sombres derrière les yeux. Les cornes : une **famille de courbes
+   parallèles** — le même arc décliné en deux ou trois tailles, tout balayé
+   dans le même mouvement ; des pointes dans tous les sens = fouillis. Les
+   dents : UNE rangée par mâchoire, enracinée dans la babine, fine (base
+   ≈ 0.12 pour une tête de 4 studs), deux crocs plus longs — deux rangées
+   serrées de bâtonnets lisent comme des stalactites.
+2. **Le détail de peau est un MOTIF, jamais une dispersion.** Une peau de
+   reptile, c'est des plaques qui se suivent, se chevauchent et s'alignent
+   sur le squelette : des **rangées** d'`ecailles` le long des flancs (points
+   = squelette + direction latérale × 1.06 rayon, en zigzag de parité pour
+   dé-aligner les plans), une rangée par cuisse, dans la continuité du cou.
+   La dispersion aléatoire de petites plaques tangentes — même bien posées,
+   même à moitié noyées — lit toujours comme du BRUIT, pas comme de la peau ;
+   essayée et abandonnée sur le dragon. Corollaire tête : pareil — pas de
+   confettis sur le crâne, une seule crête d'arête continue (`chaine` fine).
 3. **La couture d'un membre = un segment trop long pour sa courbure.** Si un
    `boyau`/`chaine` montre ses articulations, doubler les points de la courbe
    — pas élargir les billes. (Les billes de `boyau` sont déjà 7 % plus

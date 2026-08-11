@@ -460,7 +460,13 @@ export function fabriqueVolume(add, defauts = {}) {
       const t = i / Math.max(1, points.length - 2);
       const ech = o.profil ? o.profil(t) : 1;
       const u = sub3(points[i + 1], points[i]);
-      const { rot } = orientFromYX(u, cross3(normale, u));
+      // LACET alterné de ±2° : deux plaques voisines se chevauchent, et leurs
+      // chants passent par le même point de chaîne — aucun décalage de
+      // position ne les sépare, seul l'ANGLE le fait (cf. `membrane`).
+      const base = orientFromYX(u, cross3(normale, u));
+      const ya = rad((i % 2 ? 1 : -1) * (o.lacet ?? 2));
+      const u2 = add3(mul3(unit(u), Math.cos(ya)), mul3(base.X, Math.sin(ya)));
+      const { rot } = orientFromYX(u2, base.X);
       const c = mid3(points[i], points[i + 1]);
       faites.push(poser(`${nom}${i + 1}`, groupe, o.shape || "Block",
         [larg * ech, len3(u) * recouvre, ep],
