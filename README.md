@@ -9,11 +9,13 @@ quoi que ce soit dans Roblox Studio.
 
 Deux modes selon ce que vous faites :
 
-- **Low-poly studio** (défaut) — props, objets, décor. 5 à 35 parts, le charme
-  vient du dépouillement.
-- **Détaillé** — créatures, boss, ailes. 150 à 600 parts, avec une bibliothèque
-  de primitives de volume (chanfreins, fuseaux, membranes, plumes, écailles) et
-  un miroir exact pour ne modéliser qu'un côté.
+- **Détaillé** (défaut) — l'objectif est de **reproduire l'image source**,
+  courbes et galbes compris. 40 à 3000 parts selon le sujet (Roblox n'impose
+  aucun plafond de parts), avec une bibliothèque de primitives de volume
+  (surfaces de révolution, tores, nappes courbes, chanfreins, fuseaux,
+  membranes, plumes, écailles) et un miroir exact pour ne modéliser qu'un côté.
+- **Low-poly studio** (sur demande) — rendu stylisé assumé ou mob instancié en
+  masse. 5 à 35 parts, le charme vient du dépouillement.
 
 Et un second skill, **HyperBlox Finition**, qui rattrape ce qui reste « presque
 fini » : les faces confondues qui clignotent en jeu, les bouts de barre qui
@@ -212,26 +214,35 @@ que le PNG a bien été réécrit.
 ⚠ Une **silhouette** se juge de face et de profil, à plat. Une vue de trois
 quarts montre le détail, jamais la ligne d'ensemble.
 
-## Modèles détaillés
+## Modèles détaillés (le mode par défaut)
 
-Au-delà de ~80 parts, écrire le `model.json` à la main devient un piège — non
-parce que c'est long, mais parce que plus rien n'est **modifiable** : changer
-l'angle d'une aile demanderait de recalculer trente positions. La source de
-vérité devient alors un générateur `gen-<slug>.mjs`, et
-[`hyperblox/lib/volume.mjs`](hyperblox/lib/volume.mjs) fournit le vocabulaire :
+En mode détaillé, on n'écrit pas le `model.json` à la main : au-delà de ~80
+parts, plus rien n'est **modifiable** — changer l'angle d'une aile demanderait
+de recalculer trente positions. La source de vérité est un générateur
+`gen-<slug>.mjs`, et [`hyperblox/lib/volume.mjs`](hyperblox/lib/volume.mjs)
+fournit le vocabulaire — l'image se lit en **familles de formes** (le Block nu
+est le dernier recours), chaque famille a sa primitive :
 
 ```js
-import { fabriqueVolume } from "./hyperblox/lib/volume.mjs";
+import { fabriqueVolume, arc } from "./hyperblox/lib/volume.mjs";
 const V = fabriqueVolume(add, { color: [120, 90, 70] });
 
+V.tour("Vase", "Deco", [0, 0, 0], 4.5, [0.9, 1.6, 1.3, 0.5, 0.8]);   // révolution
+V.anneau("Roue", "Roue", [6, 2, 0], 1.7, { tube: 0.6, normale: [0, 0, 1] });
+const rA = arc([-2.5, 2.2, -2], [2.5, 2.2, -2], { creux: 1.4, n: 7 });
+const rB = arc([-2.5, 2.2, 2], [2.5, 2.2, 2], { creux: 1.4, n: 7 });
+V.nappe("Carapace", "Corps", rA, rB, { bandes: 5, bombe: 0.7 });     // coque courbe
 const cou = V.arc([0, 4, -1], [0, 8, -4], { creux: 1.4 });
 V.chaine("Cou", "Buste", cou, { section: [1.8, 0.7], cannele: true });
 const aile = V.membrane("AileG", "AileG", epaule, doigts, { creux: 0.5 });
 V.miroirX(aile);                       // l'autre aile, exacte
 ```
 
-`biseau` (masse à arêtes rabattues), `croise`, `chaine`, `membrane`, `plumes`,
-`ecailles`, `pointe`, `miroirX`, `arc`, `courbe`. Détail et pièges :
+`tour` (surface de révolution : vase, dôme, cloche), `anneau` (tore), `nappe`
+(surface courbe entre deux rails : carapace, coque, toit bombé), `biseau`
+(masse à arêtes rabattues), `croise`, `chaine`, `boyau`, `tube`, `membrane`,
+`plumes`, `ecailles`, `pointe`, `miroirX`, `arc`, `courbe`. Détail, méthode de
+lecture d'image et pièges :
 [`style-detaille.md`](hyperblox/references/style-detaille.md).
 
 ## Structure du dépôt

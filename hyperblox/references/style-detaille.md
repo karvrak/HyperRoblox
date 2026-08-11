@@ -1,13 +1,68 @@
 # HyperBlox — mode détaillé : donner du volume
 
-`style-lowpoly.md` décrit le mode par défaut : simplifier jusqu'à l'essentiel,
-5 à 35 parts, le charme vient du dépouillement. Ce document décrit **l'autre
-mode** — celui des créatures, des boss, de tout ce qui doit soutenir le regard
-de près : 150 à 600 parts, du galbe, des ailes, de la matière.
+**C'est le mode par défaut du skill.** L'objectif n'est pas un « style Roblox
+en cubes » : c'est de **reproduire l'image source**, ses courbes, ses galbes,
+ses proportions — avec autant de parts qu'il en faut. Le low-poly
+(`style-lowpoly.md`, 5-35 parts) reste disponible, mais uniquement quand
+l'utilisateur demande explicitement un rendu stylisé/minimaliste ou un mob
+instancié en masse.
 
-Ce n'est pas « le même travail en plus long ». Ce sont deux méthodes
-différentes, et confondre les deux donne le pire des cas : un modèle lourd qui
-lit quand même comme un tas de rectangles.
+Ce n'est pas « le même travail en plus long » que le low-poly. Ce sont deux
+méthodes différentes, et confondre les deux donne le pire des cas : un modèle
+lourd qui lit quand même comme un tas de rectangles.
+
+## Lire l'image en formes — le Block en dernier
+
+Le réflexe qui fait les modèles « en studs », c'est de lire l'image en boîtes.
+La bonne lecture est en **familles de formes**, et le Block nu est le **dernier
+recours** — réservé à ce qui est réellement plan dans l'image (une planche, un
+mur, une caisse). Tout le reste a une primitive :
+
+| Ce qu'on voit dans l'image | Comment le construire | Primitive |
+|---|---|---|
+| contour courbe (dos, branche, manche) | tronçons le long d'une courbe | `arc`/`courbe` + `chaine` |
+| membre, tronc, tentacule, doigt | tubes + billes aux coudes | `boyau` |
+| volume de révolution (vase, cloche, dôme, poire, jarre, pion, colonne tournée, chapeau) | tranches de cylindre empilées suivant un profil de rayon | `tour` |
+| crâne, ventre, fruit non sphérique | `tour` (la Ball Roblox est TOUJOURS ronde — pas d'ellipsoïde) | `tour`, grappe de `Ball` |
+| anneau, cerclage, pneu, auréole, anse, hublot | couronne de tubes + billes | `anneau` |
+| coque courbe (carapace, coque de bateau, toit bombé, capot, dossier) | lattes loftées entre deux rails, bombé `bombe` | `nappe` |
+| arête vive que l'image montre adoucie | chanfrein | `biseau` |
+| angle rentrant adouci (congé) | un tube posé dans l'angle | `tube` |
+| cône, corne, croc, griffe, épine | fuselé le long d'une courbe | `pointe` |
+| plaques, écailles, tuiles, lamelles | chevauchement le long d'un chemin | `ecailles` |
+| toile tendue, voile, nageoire | lattes en éventail | `membrane` |
+| plumes | éventail à deux rangs | `plumes` |
+| muscle nervuré, colonne cannelée | section étoilée | `croise`, `chaine{cannele}` |
+
+Trois règles de fidélité :
+
+1. **Toute ligne courbe de l'image doit être courbe dans le modèle.** Une
+   courbe se segmente : au minimum **6 segments par quart de tour** pour ce qui
+   se voit de près, 12 à 24 tranches pour un `tour`, 14 à 20 pour un `anneau`.
+   En dessous, l'œil lit un polygone, et on retombe dans le « studs ».
+2. **Rond dans l'image = rond dans le modèle.** Cylinder et Ball d'abord ; un
+   poteau, un canon, une corne ne sont jamais des Blocks.
+3. **Les proportions se mesurent, elles ne se devinent pas.** Prendre 4 ou 5
+   rapports sur l'image source (hauteur totale / largeur, taille de la tête /
+   corps, position de la taille…) et les poser en constantes en tête du
+   générateur. C'est contre ces rapports que se juge chaque capture.
+
+### L'inventaire de formes (avant d'écrire le générateur)
+
+Avant la première ligne de code, écrire l'inventaire : chaque masse de l'image,
+sa famille de forme, sa primitive, son budget approximatif. Cinq lignes
+suffisent :
+
+```
+crâne        → volume de révolution écrasé   → tour (n=12)          ~12 parts
+bec          → cône courbe                   → pointe               ~6
+corps        → masse chanfreinée             → biseau + ecailles    ~30
+ailes ×2     → doigts + toile                → pointe + membrane    ~90
+serres       → tubes + griffes               → boyau + pointe       ~24
+```
+
+C'est l'inventaire qui décide du budget — pas l'inverse. Et c'est lui qu'on
+montre à l'utilisateur si le cadrage est ambigu.
 
 ## La bascule : on n'écrit plus le JSON à la main
 
@@ -52,7 +107,12 @@ un seul endroit à corriger si le skill bouge.
 | Primitive | Ce qu'elle pose | Coût |
 |---|---|---|
 | `barre(nom, groupe, a, b, section)` | un bloc **tendu entre deux points** | 1 part |
+| `tube(nom, groupe, a, b, diam)` | un cylindre tendu entre deux points — le pendant rond de `barre` | 1 part |
+| `boyau(nom, groupe, points, {section})` | membre **rond** le long d'une courbe : tubes + billes aux coudes | 2/tronçon |
 | `chaine(nom, groupe, points, {section})` | tronçons fuselés le long d'un chemin — cou, queue, membre | 1/tronçon |
+| `tour(nom, groupe, base, hauteur, profil)` | **surface de révolution** : vase, cloche, dôme, jarre, pion, colonne tournée | 1/tranche |
+| `anneau(nom, groupe, centre, rayon, {tube})` | **tore** : bague, cerclage, pneu, anse (`arcDeg` < 360 pour un arc ouvert) | 2/segment |
+| `nappe(nom, groupe, railA, railB, {bombe})` | **surface courbe** loftée entre deux rails : carapace, coque, toit bombé | bandes × colonnes |
 | `croise(nom, groupe, centre, taille)` | masse à section **étoilée** (2 blocs à 45°) | 2 parts |
 | `biseau(nom, groupe, centre, taille, {arete})` | masse à section **octogonale** (noyau en croix + 4 coins) | 6 parts |
 | `membrane(nom, groupe, epaule, doigts)` | la toile d'une aile de chauve-souris | bandes × panneaux |
@@ -61,6 +121,20 @@ un seul endroit à corriger si le skill bouge.
 | `pointe(nom, groupe, points)` | corne, croc, griffe, épine (fuselée, courbe) | 1/tronçon |
 | `miroirX(parts)` | duplique un lot de parts de l'autre côté | ×1 |
 | `arc(a, b, {creux})` / `courbe(a, p1, p2, b)` | les chemins qui nourrissent tout le reste | 0 |
+
+Notes d'usage des trois primitives de rond :
+
+- **`tour`** : le profil est un tableau de rayons (`[0.9, 1.6, 1.3, 0.5]` = un
+  vase) ou une fonction `(t) => rayon` (dôme : `(t) => R * Math.cos(t * Math.PI / 2)`).
+  Les tranches se recouvrent et alternent leur diamètre d'un cheveu : pas de
+  z-fighting même à profil plat. Monter `n` à 16-24 pour une pièce vue de près.
+- **`anneau`** : les billes aux joints font la continuité du boudin — les
+  retirer (`noeuds: false`) uniquement si l'anneau est pris dans une masse.
+- **`nappe`** : les deux rails sortent du même `arc`/`courbe` avec le même `n`.
+  `bombe` gonfle le milieu **selon `vers`** (défaut : vers le haut) — pour une
+  coque de bateau, passer `vers: [0, -1, 0]`. Les lattes se recouvrent
+  généreusement (`recouvre`, défaut 1.25) : sur une surface courbe, ce sont des
+  cordes, et sans recouvrement elles ouvrent des fentes en V.
 
 ### Ce qui casse la lecture « boîte »
 
@@ -145,18 +219,32 @@ qui pèse, pas les parts.
 
 ## Budget
 
+Roblox n'impose **aucun plafond de parts par modèle**. Les deux vraies limites
+sont ailleurs, et toutes deux sont gérées : le plafond de 200 000 caractères
+d'une source de script (build compact automatique, puis transport en
+`StringValue` via `serve.mjs` + `install-json.lua` — voir SKILL.md § 5), et le
+coût de rendu, qui dépend du **nombre d'instances à l'écran**, pas du modèle.
+Le budget se décide donc par le nombre d'exemplaires simultanés, jamais par une
+règle absolue :
+
 | Type | Budget | Note |
 |---|---|---|
-| Prop simple | 5-20 | mode low-poly, cf. `style-lowpoly.md` |
-| Prop riche | 15-35 | idem |
-| Créature de meute | 60-150 | plusieurs à l'écran en même temps |
-| Créature héroïque | 150-350 | vue de près, une ou deux à l'écran |
-| Boss | 300-600 | unique à l'écran, vu de près et en gros plan |
+| Prop courant (caisse, lanterne, tonneau) | 40-120 | le rond est rond, les arêtes chanfreinées |
+| Prop héroïque (coffre, autel, fontaine) | 120-400 | vu de près, manipulé |
+| Créature de meute | 60-150 | apparaît par 5-10 : rester sobre |
+| Créature héroïque | 200-500 | une ou deux à l'écran |
+| Boss | 400-1000 | unique, vu en gros plan |
+| Pièce maîtresse (statue géante, véhicule héro, bâtiment signature) | 800-3000 | unique dans la place |
 
-Le nombre de parts n'est pas un défaut. Ce qui coûte, c'est le **nombre
-d'instances à l'écran** : 600 parts pour un boss unique passent, 600 parts pour
-un mob qui apparaît par huit ne passent pas. Décider du budget d'après le
-nombre d'exemplaires simultanés, jamais d'après une règle absolue.
+Deux réflexes qui rendent les gros budgets gratuits en jeu :
+
+- **`collide: false` sur tout le détail.** Seules les masses principales ont
+  besoin de collision ; une écaille, une latte de nappe, une tranche de tour
+  qui collident font payer de la physique pour rien. En pratique : toute part
+  de moins de ~0.5 stud d'épaisseur ou purement décorative → `collide: false`.
+- **Le low-poly reste le bon outil pour la meute.** 90 exemplaires d'un mob à
+  600 parts, c'est 54 000 parts à l'écran : là, `style-lowpoly.md` redevient
+  la bonne réponse — sur ce cas précis, pas par défaut.
 
 ## Contrôle
 

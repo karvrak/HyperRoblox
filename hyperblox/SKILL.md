@@ -1,7 +1,7 @@
 ---
 name: hyperblox
 description: >
-  Image → modèle 3D Roblox low-poly (style studio). Comme HyperFrames pour la vidéo :
+  Image → modèle 3D Roblox détaillé, fidèle à l'image source. Comme HyperFrames pour la vidéo :
   un model.json (liste de Parts + animations keyframes) est la source de vérité, un
   preview.html 3D interactif sert de maquette à valider avec l'utilisateur (lecture des
   animations incluse), puis un build.lua généré depuis le même JSON construit le modèle
@@ -30,29 +30,34 @@ hyperblox/<slug>/
 
 ## Deux modes, deux méthodes
 
-| | **Low-poly** (défaut) | **Détaillé** |
+| | **Détaillé** (défaut) | **Low-poly** (sur demande) |
 |---|---|---|
-| Pour | props, objets, décor | créatures, boss, tout ce qui se voit de près |
-| Budget | 5 à 35 parts | 150 à 600 parts |
-| Source de vérité | `model.json` écrit à la main | un **générateur** `gen-<slug>.mjs` qui produit le `model.json` |
-| Guide | `references/style-lowpoly.md` | `references/style-detaille.md` |
+| Pour | tout — l'objectif est de **reproduire l'image source**, courbes et galbes compris | rendu stylisé demandé explicitement, ou mob instancié en masse |
+| Budget | 40 à 3000 parts selon le sujet (aucun plafond Roblox — voir `style-detaille.md` § Budget) | 5 à 35 parts |
+| Source de vérité | un **générateur** `gen-<slug>.mjs` qui produit le `model.json` | `model.json` écrit à la main |
+| Guide | `references/style-detaille.md` | `references/style-lowpoly.md` |
 
-Le basculement se fait vers ~80 parts, et il n'est pas cosmétique : au-delà,
-un `model.json` écrit à la main n'est plus **modifiable** — changer l'angle
-d'une aile demanderait de recalculer trente positions, donc on ne le fait pas,
-donc le modèle se fige sur sa première version. Le générateur rend la
-proportion modifiable, c'est là son intérêt, pas la vitesse d'écriture.
+**Le détaillé est le défaut** : on ne livre plus de « tas de cubes ». Le
+low-poly ne se choisit que si l'utilisateur demande un rendu minimaliste, ou
+pour une créature de meute affichée par dizaines.
+
+En détaillé, on n'écrit pas le `model.json` à la main (au-delà de ~80 parts,
+plus rien n'est **modifiable** — changer l'angle d'une aile demanderait de
+recalculer trente positions, donc on ne le fait pas, donc le modèle se fige
+sur sa première version). Le générateur rend la proportion modifiable, c'est
+là son intérêt, pas la vitesse d'écriture.
 
 ## Lectures obligatoires avant d'écrire un model.json
 
 - `references/part-schema.md` — schéma JSON, axes, conventions Wedge/Cylinder,
   matériaux autorisés, pivot au sol.
-- `references/style-lowpoly.md` — lecture d'image, budget de parts, palette,
-  règles anti z-fighting, échelle en studs.
-- `references/style-detaille.md` — **si le modèle vise le volume** (créature,
-  boss, ailes) : bascule vers un générateur, primitives de `lib/volume.mjs`
-  (chanfrein, fuseau, membrane, plumes, écailles, miroir), pièges du miroir
-  d'Euler et des surfaces coplanaires, budget par nombre d'exemplaires à l'écran.
+- `references/style-detaille.md` — **le guide du mode par défaut** : lecture de
+  l'image en familles de formes (le Block en dernier), inventaire de formes,
+  primitives de `lib/volume.mjs` (révolution, tore, nappe, chanfrein, fuseau,
+  membrane, plumes, écailles, miroir), pièges du miroir d'Euler et des surfaces
+  coplanaires, budget par nombre d'exemplaires à l'écran.
+- `references/style-lowpoly.md` — **seulement si le low-poly est demandé** :
+  lecture d'image simplifiée, budget 5-35 parts, palette, échelle en studs.
 - `references/animations.md` — **si le modèle doit bouger** : schéma des tracks
   keyframes, pivots, easings, recettes (porte, couvercle, tiroir, rotation),
   API du player Lua, et le schéma des `emitters` (particules Roblox).
@@ -87,8 +92,10 @@ celles auxquelles la demande répond déjà) :
    Studio dès la première validation ? (build.lua est généré dans tous les cas,
    mais ne proposer son exécution que si l'utilisateur veut construire —
    beaucoup préfèrent plusieurs allers-retours de préview avant.)
-2. **Style** : low-poly studio (défaut, rapide) ou plus détaillé/réaliste
-   (budget de parts élevé, plus de passes d'itération) ?
+2. **Style** : le détaillé/fidèle à l'image est le défaut — ne PAS poser la
+   question, sauf si le modèle est destiné à être instancié en masse (mob de
+   meute) ou si la demande évoque un rendu minimaliste : dans ces deux cas
+   seulement, proposer le low-poly.
 3. **Animations** : si l'utilisateur n'en a pas demandé, lui demander s'il en
    veut une — réponse libre attendue : « non » ou la description de ce qui doit
    bouger. S'il en veut (ou en a déjà demandé) : préciser lesquelles et comment
@@ -101,9 +108,13 @@ dédié — l'animation cible des groupes autour d'un pivot (charnière, axe).
 
 ### 2. Modéliser
 
-Lire l'image attentivement (silhouette → masses → détails → palette, cf.
-style-lowpoly). Créer `hyperblox/<slug>/model.json` à la racine du projet
-Roblox, puis générer :
+Lire l'image en **familles de formes**, pas en boîtes : silhouette → masses →
+pour chaque masse, sa primitive (`style-detaille.md` § Lire l'image en formes ;
+le Block nu est le dernier recours). Écrire l'**inventaire de formes** (masse →
+primitive → budget), mesurer 4-5 rapports de proportions sur l'image, puis
+écrire le générateur `gen-<slug>.mjs` dans `hyperblox/<slug>/` et générer le
+`model.json`. (En low-poly demandé explicitement : lecture simplifiée cf.
+style-lowpoly, `model.json` à la main.) Puis :
 
 ```powershell
 node .claude/skills/hyperblox/scripts/build.mjs hyperblox/<slug>
@@ -130,9 +141,11 @@ code 13, sans message et sans fichier), le **cache disque** (Chrome resert un
 son ancien nombre de parts), et la vérification que le PNG a bien été
 **réécrit** — sinon on relit tranquillement la capture d'avant.
 
-Lire le screenshot et s'auto-critiquer (checklist en fin de style-lowpoly) :
-silhouette, proportions, palette, parts inutiles. Ajuster le JSON et regénérer
-— 2 à 3 passes maximum avant de montrer.
+Lire le screenshot et s'auto-critiquer **contre l'image source** : silhouette,
+rapports de proportions mesurés à l'inventaire, palette, courbes restées
+anguleuses (un rond qui lit comme un polygone = monter les segments), parts
+inutiles. Ajuster le générateur et regénérer — 2 à 3 passes maximum avant de
+montrer.
 
 ⚠ **Une silhouette se juge de FACE et de PROFIL, à plat.** Régler une pose en
 ne regardant qu'une vue de trois quarts est le meilleur moyen de tourner en

@@ -109,4 +109,6 @@ node .claude/skills/hyperblox/scripts/build.mjs <dossier-du-modele>
 Produit `preview.html` (viewer autonome, zéro réseau) et `build.lua`
 (idempotent — remplace le modèle du même nom) dans le dossier du modèle.
 Le script valide le schéma et avertit : dimensions < 0.05, modèle
-flottant/enfoncé, Ball/Cylinder non uniformes, > 80 parts.
+flottant/enfoncé, Ball/Cylinder non uniformes, > 400 parts (rappel du coût
+si le modèle est instancié plusieurs fois — un modèle unique peut aller
+bien au-delà, cf. style-detaille.md § Budget).

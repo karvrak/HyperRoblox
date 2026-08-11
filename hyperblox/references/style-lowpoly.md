@@ -1,5 +1,10 @@
 # HyperBlox — guide de style low-poly « studio Roblox »
 
+> ⚠ **Mode sur demande, pas le défaut.** Le défaut du skill est le mode
+> détaillé (`style-detaille.md`) : reproduire l'image, courbes comprises.
+> Ce guide ne s'applique que si l'utilisateur demande explicitement un rendu
+> stylisé/minimaliste, ou pour un mob instancié en masse.
+
 Objectif : traduire une image (photo, concept art, image IA) en un objet
 **low-poly assumé**, lisible de loin, dans la texture Roblox de base — pas une
 réplique fidèle. Le charme vient de la simplification.
