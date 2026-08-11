@@ -182,15 +182,25 @@ rendement :
 
 1. **Une tête n'est jamais un block.** Crâne + museau = un `tour` **couché**
    le long de l'axe du museau (`axe` incliné), profil de rayons qui s'affine
-   vers le nez. C'est le morceau que le joueur regarde en premier, et le
-   dernier qu'on pense à arrondir.
-2. **Un détail de peau est TANGENT à la surface.** Écaille, plaque, bosse :
-   orientation par la normale locale (`orientFromYX(normale, spin)`), spin
-   aléatoire autour d'elle seulement, une pointe d'inclinaison (±7°). Une
-   rotation aléatoire sur trois axes plante la moitié des pièces par la
-   tranche — l'effet « copeaux » qui ruine un flanc. Et le point de pose d'un
-   détail s'échantillonne sur le **squelette** (courbe + rayon du tronçon, au
-   milieu du tronçon), jamais sur des sphères estimées de tête.
+   vers le nez, une bille au bout (la dernière tranche coupe net sinon).
+   C'est le morceau que le joueur regarde en premier, et le dernier qu'on
+   pense à arrondir. Puis **habiller le lathe**, qui reste un tube sans ça :
+   bourrelet de sourcil au-dessus de chaque œil (`pointe` couchée sur le
+   crâne), rangée de bosses sur l'arête du museau (étroites et enfoncées,
+   sinon elles débordent en casquette), plaques de joue, couronne de cornes
+   secondaires, pointes de mâchoire. Les dents : fines et nombreuses (base
+   ≈ 0.1 pour une tête de 4 studs), deux crocs plus longs — des dents larges
+   lisent comme des touches de piano.
+2. **Un détail de peau est TANGENT à la surface, et ENFONCÉ À MOITIÉ.**
+   Écaille, plaque, bosse : orientation par la normale locale
+   (`orientFromYX(normale, spin)`), spin aléatoire autour d'elle seulement,
+   inclinaison légère (±3°). Une rotation aléatoire sur trois axes plante la
+   moitié des pièces par la tranche — l'effet « copeaux » qui ruine un flanc.
+   Et le centre se pose SUR la surface (moitié noyée, moitié saillante, donc
+   épaisseur ≈ 0.25) : posée au-dessus, une plaque tangente montre l'ombre
+   sous ses bords sur toute courbure — l'effet « autocollant qui se
+   décolle ». Le point de pose s'échantillonne sur le **squelette** (courbe +
+   rayon du tronçon, au milieu du tronçon), jamais sur des sphères estimées.
 3. **La couture d'un membre = un segment trop long pour sa courbure.** Si un
    `boyau`/`chaine` montre ses articulations, doubler les points de la courbe
    — pas élargir les billes. (Les billes de `boyau` sont déjà 7 % plus
