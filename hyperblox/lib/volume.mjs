@@ -359,8 +359,11 @@ export function fabriqueVolume(add, defauts = {}) {
         // Deux décalages, tous deux selon la normale de la toile : un par
         // panneau, un par latte. Le second départage les lattes d'un MÊME
         // panneau, coplanaires elles aussi — et il fait lire la membrane comme
-        // une peau nervurée plutôt que comme une plaque.
-        const biais = mul3(n, (p % 2 ? 1 : -1) * ep * 0.3 + (k % 2 ? 1 : -1) * ep * 0.22);
+        // une peau nervurée plutôt que comme une plaque. Le pas par latte est
+        // MONOTONE (en tuiles, centré sur la toile) et non alterné : sur une
+        // toile affaissée, l'inclinaison relative de deux lattes peut annuler
+        // un pas alterné dans la zone de recouvrement — pas une progression.
+        const biais = mul3(n, (p % 2 ? 1 : -1) * ep * 0.3 + (k - bandes / 2) * ep * 0.5);
         const t0 = lerp(depart, 1, (k - 1) / bandes), t1 = lerp(depart, 1, k / bandes);
         const tm = (t0 + t1) / 2;
         let p1 = add3(lerp3(epaule, A, tm), biais), p2 = add3(lerp3(epaule, Bp, tm), biais);
@@ -368,15 +371,35 @@ export function fabriqueVolume(add, defauts = {}) {
           const bas = [0, -creux * Math.sin(Math.PI * tm), 0];
           p1 = add3(p1, bas); p2 = add3(p2, bas);
         }
-        // largeur de la latte = ce qu'elle couvre le long du rayon. Les lattes
-        // se touchent bord à bord sans déborder : la couture d'un panneau à
-        // l'autre est masquée par le DOIGT, comme sur une vraie aile — une
-        // marge de recouvrement, elle, ressortirait dans le vide.
-        const larg = ((len3(sub3(A, epaule)) + len3(sub3(Bp, epaule))) / 2) * (t1 - t0);
+        // largeur de la latte = ce qu'elle couvre le long du rayon, fois
+        // `recouvre` : bord à bord (1.0), les lattes s'écartent dès que la
+        // toile s'affaisse (`creux` fort) — chaque latte est une CORDE, et
+        // les cordes d'un arc ne se touchent pas. Le décalage alterné rend le
+        // recouvrement gratuit (plans parallèles, jamais confondus). La
+        // couture d'un panneau à l'autre reste masquée par le DOIGT.
+        // …et le recouvrement VARIE avec la parité de la latte : à recouvrement
+        // constant, les CHANTS de deux lattes voisines tombent dans les mêmes
+        // plans de coupe (z-fighting de chants, le même piège que `nappe`).
+        const larg = ((len3(sub3(A, epaule)) + len3(sub3(Bp, epaule))) / 2) * (t1 - t0)
+          * (o.recouvre ?? (creux ? 1.18 : 1.0)) * (k % 2 ? 1.05 : 0.97);
         const u = sub3(p2, p1);
-        const { rot } = orientFromYX(u, o.xHint || sub3(A, epaule));
+        // Contre le z-fighting entre lattes voisines, les décalages de
+        // POSITION ne suffisent pas : l'affaissement de la toile dérive du
+        // même ordre qu'un étagement fixe (grandes faces), et les chants
+        // d'extrémité passent tous par le même rayon de doigt, quasi parallèle
+        // à leur plan. On sépare donc par l'ANGLE — deux plans qui se croisent
+        // à 3-5° ne sont confondus nulle part, et c'est invisible à l'œil :
+        //   · VRILLE ±2.5° autour de l'axe de la latte (grandes faces, chants
+        //     radiaux),
+        //   · LACET ±1.8° dans le plan de la toile (chants d'extrémité).
+        const base = orientFromYX(u, o.xHint || sub3(A, epaule));
+        const ya = rad((k % 2 ? 1 : -1) * (o.lacet ?? 1.8));
+        const u2 = add3(mul3(unit(u), Math.cos(ya)), mul3(base.X, Math.sin(ya)));
+        const va = rad((k % 2 ? 1 : -1) * (o.vrille ?? 2.5));
+        const { rot } = orientFromYX(u2,
+          add3(mul3(base.X, Math.cos(va)), mul3(base.Z, Math.sin(va))));
         faites.push(poser(`${nom}P${p + 1}B${k}`, groupe, "Block",
-          [larg, len3(u), ep], mid3(p1, p2),
+          [larg, len3(u) * (k % 2 ? 1.0 : 0.97), ep], mid3(p1, p2),
           { ...o, rotation: rot, color: o.color || COL }));
       }
     }
@@ -458,6 +481,152 @@ export function fabriqueVolume(add, defauts = {}) {
     });
   };
 
+  /* ---------------------------------------------------------------- tour --
+     Une SURFACE DE RÉVOLUTION : un empilement de tranches de cylindre le long
+     d'un axe, dont le rayon suit un profil — vase, cloche, dôme, poire, pion
+     d'échecs, colonne tournée, chapeau de champignon, jarre. C'est la primitive
+     qui remplace à la fois la Ball écrasée (impossible : Roblox rend la sphère
+     sur la PLUS PETITE dimension, une Ball est toujours ronde) et le tas de
+     blocs, pour tout volume rond plein qui n'est pas une sphère.
+     `profil` : (t de 0 à 1, 0 = base) => rayon en studs, ou un tableau de
+     rayons interpolés linéairement — [0.2, 1.4, 1.1, 0.5] suffit à décrire un
+     vase. Dôme : (t) => R * Math.cos(t * Math.PI / 2). `n` tranches (défaut
+     10 ; monter à 16-24 si la pièce est vue de près). */
+  const tour = (nom, groupe, base, hauteur, profil, o = {}) => {
+    const faites = [];
+    const n = o.n ?? 10;
+    const axe = unit(o.axe || [0, 1, 0]);
+    const prof = typeof profil === "function"
+      ? profil
+      : (t) => {
+          const x = t * (profil.length - 1), i = Math.min(profil.length - 2, Math.floor(x));
+          return lerp(profil[i], profil[i + 1], x - i);
+        };
+    const { rot } = orientFromXY(axe, o.yHint || (Math.abs(axe[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0]));
+    const dh = hauteur / n;
+    for (let i = 0; i < n; i++) {
+      const r = Math.max(0.03, prof((i + 0.5) / n));
+      // `rab` : chaque tranche déborde sur ses voisines, pour que ses faces
+      // circulaires vivent À L'INTÉRIEUR de la tranche d'à côté au lieu d'être
+      // confondues avec les siennes. Le +0.012 alterné départage les surfaces
+      // LATÉRALES de deux tranches consécutives de même rayon (profil plat),
+      // coïncidentes sinon sur toute la bande de recouvrement.
+      const d = 2 * r + (i % 2 ? 0.012 : 0);
+      faites.push(poser(nom + (i + 1), groupe, "Cylinder",
+        [dh + (o.rab ?? 0.06), d, d],
+        add3(base, mul3(axe, (i + 0.5) * dh)),
+        { ...o, rotation: rot }));
+    }
+    return faites;
+  };
+
+  /* -------------------------------------------------------------- anneau --
+     Un TORE : une couronne de tubes, une bille à chaque joint pour lisser les
+     coudes — bague, cerclage de tonneau, pneu, auréole, anse, hublot. `rayon`
+     est celui de la couronne (au centre du boudin), `tube` le diamètre du
+     boudin, `normale` l'axe de l'anneau. `arcDeg` < 360 ouvre l'anneau (anse
+     de panier, fer à cheval), `debut` le fait démarrer ailleurs qu'à 0°. */
+  const anneau = (nom, groupe, centre, rayon, o = {}) => {
+    const n = o.n ?? 16;
+    const tubeD = o.tube ?? 0.4;
+    const normale = unit(o.normale || [0, 1, 0]);
+    const arcDeg = o.arcDeg ?? 360;
+    const ferme = arcDeg >= 360;
+    const { X, Z } = orientFromYX(normale);
+    const pts = [];
+    for (let i = 0; i <= (ferme ? n : n); i++) {
+      const a = rad((o.debut ?? 0) + (i / n) * arcDeg);
+      pts.push(add3(centre, add3(mul3(X, rayon * Math.cos(a)), mul3(Z, rayon * Math.sin(a)))));
+    }
+    const faites = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = ferme ? pts[(i + 1) % n] : pts[i + 1];
+      faites.push(tube(nom + (i + 1), groupe, a, b, tubeD, { ...o, rab: o.rab ?? 0.04 }));
+      // La bille au joint n'est pas décorative (cf. `boyau`) : elle comble
+      // l'angle vide entre deux tubes qui se rencontrent en biais.
+      if (o.noeuds !== false && (ferme || i < n - 1)) {
+        faites.push(poser(nom + "Noeud" + (i + 1), groupe, "Ball",
+          [tubeD, tubeD, tubeD], b, { ...o }));
+      }
+    }
+    return faites;
+  };
+
+  /* --------------------------------------------------------------- nappe --
+     Une SURFACE COURBE tendue entre deux rails (deux courbes de même nombre de
+     points, sorties d'`arc` ou de `courbe`) : carapace, coque de bateau, toit
+     bombé, capot, dossier de trône, tuile canal. La surface est pavée de
+     lattes orientées CELLULE PAR CELLULE — c'est ce qui la fait suivre la
+     courbure au lieu de la facetter en trois plans.
+     `bandes` : subdivisions en travers (défaut 3). `bombe` : bombement du
+     milieu selon la normale, en studs — les rails ne courbent que dans leur
+     plan, c'est `bombe` qui donne la DOUBLE courbure d'une carapace ou d'une
+     coque. Le bombement déforme la GRILLE de points avant de poser les lattes :
+     elles s'inclinent pour suivre la bosse au lieu d'être translatées en
+     marches d'escalier. */
+  const nappe = (nom, groupe, railA, railB, o = {}) => {
+    if (railA.length !== railB.length) {
+      throw new Error(`nappe(${nom}) : les deux rails doivent avoir le même nombre de points `
+        + `(${railA.length} vs ${railB.length}) — sortir les deux du même arc/courbe avec le même n.`);
+    }
+    const faites = [];
+    const bandes = o.bandes ?? 3;
+    const ep = o.epaisseur ?? 0.18;
+    const bombe = o.bombe ?? 0;
+    const nc = railA.length;
+    // grille plane interpolée entre les rails…
+    const plat = [];
+    for (let k = 0; k <= bandes; k++) plat.push(railA.map((p, i) => lerp3(p, railB[i], k / bandes)));
+    // …puis bombée : chaque point est poussé selon la normale LOCALE de la
+    // grille plane. C'est le bombement des points, pas des lattes, qui fait
+    // que les lattes s'inclinent et se raccordent au lieu de s'étager.
+    // `vers` (défaut : vers le haut) lève l'ambiguïté du produit vectoriel :
+    // selon le sens des rails, la normale brute peut pointer vers le bas, et
+    // le « bombé » creuserait la nappe au lieu de la gonfler.
+    const vers = unit(o.vers || [0, 1, 0]);
+    const sous = plat.map((rang, k) => rang.map((p, i) => {
+      const f = bombe * Math.sin(Math.PI * (k / bandes));
+      if (!f) return p;
+      const along = sub3(plat[k][Math.min(nc - 1, i + 1)], plat[k][Math.max(0, i - 1)]);
+      let nrm = unit(cross3(along, sub3(railB[i], railA[i])));
+      if (dot3(nrm, vers) < 0) nrm = mul3(nrm, -1);
+      return add3(p, mul3(nrm, f));
+    }));
+    for (let k = 0; k < bandes; k++) {
+      for (let i = 0; i < nc - 1; i++) {
+        const a0 = sous[k][i], a1 = sous[k][i + 1], b0 = sous[k + 1][i], b1 = sous[k + 1][i + 1];
+        const long = sub3(mid3(a1, b1), mid3(a0, b0));      // le long des rails
+        const trav = sub3(mid3(b0, b1), mid3(a0, a1));      // en travers
+        let nrm = unit(cross3(long, trav));
+        if (dot3(nrm, vers) < 0) nrm = mul3(nrm, -1);
+        // Étagement anti-coplanaire : les cellules voisines vivent dans la
+        // même surface PAR CONSTRUCTION. Un damier symétrique (±d) ne suffit
+        // pas : sur une surface courbe, l'inclinaison relative de deux lattes
+        // peut ANNULER l'écart dans la zone de recouvrement. On empile donc en
+        // TUILES — chaque bande monte d'un demi-ep sur la précédente, chaque
+        // colonne impaire d'un quart — des pas monotones que l'inclinaison ne
+        // peut pas annuler des deux côtés à la fois.
+        const c = add3(mul3(add3(add3(a0, a1), add3(b0, b1)), 0.25),
+          mul3(nrm, k * ep * 0.5 + (i % 2 ? ep * 0.25 : 0)));
+        const { rot } = orientFromYX(long, trav);
+        // Recouvrement généreux dans les deux sens : sur une surface courbe,
+        // les lattes sont des CORDES qui s'inclinent l'une par rapport à
+        // l'autre et ouvrent des fentes en V. L'étagement en tuiles rend ce
+        // recouvrement gratuit — deux voisines qui se chevauchent sont des
+        // plans parallèles séparés, jamais confondus.
+        // Le recouvrement VARIE avec la parité de ligne et de colonne : la
+        // grille aligne sinon les CHANTS des lattes (mêmes plans de coupe
+        // entre cellules voisines), et des chants coplanaires qui se
+        // chevauchent clignotent autant que des grandes faces.
+        const rec = o.recouvre ?? 1.25;
+        faites.push(poser(`${nom}L${k + 1}C${i + 1}`, groupe, "Block",
+          [len3(trav) * rec * (i % 2 ? 1.05 : 0.98), len3(long) * rec * (k % 2 ? 1.05 : 0.98), ep], c,
+          { ...o, rotation: rot }));
+      }
+    }
+    return faites;
+  };
+
   /* ------------------------------------------------------------- miroirX --
      Duplique un lot de parts DÉJÀ POSÉES de l'autre côté du plan X = 0. On
      modélise un seul côté de la créature, on appelle ceci, et les deux côtés ne
@@ -491,7 +660,8 @@ export function fabriqueVolume(add, defauts = {}) {
   };
 
   return {
-    teinte, barre, tube, boyau, chaine, croise, biseau, membrane, plumes, ecailles, pointe, miroirX,
+    teinte, barre, tube, boyau, chaine, croise, biseau, membrane, plumes, ecailles, pointe,
+    tour, anneau, nappe, miroirX,
     arc, courbe, orientFromYX, orientFromXY, lerp, lerp3, add3, sub3, mul3, unit, len3, cross3, mid3,
   };
 }
