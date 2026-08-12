@@ -1,0 +1,98 @@
+{
+  "name": "FixtureAssemblage",
+  "unit": "stud",
+  "axes": "Roblox (Y haut, -Z avant) ; converti depuis Blender par (x, z, -y)",
+  "fbx": "fixture-assemblage.fbx",
+  "_note": "Manifest écrit à la main — PAS un export Blender. Il sert de banc d'essai à assemble.mjs : groupes, animation, transparence, collision, matériaux. Il n'a pas de FBX en face, donc son assemble.lua n'a rien à assembler dans Studio.",
+  "size": [3.0, 4.4, 2.0],
+  "pieces": [
+    {
+      "name": "Socle",
+      "group": null,
+      "size": [3.0, 0.4, 2.0],
+      "position": [0, 0.2, 0],
+      "color": [46, 46, 54],
+      "material": "Metal",
+      "transparency": 0,
+      "collide": true,
+      "fidelity": "Box",
+      "render": "Automatic",
+      "tris": 620,
+      "verts": 330
+    },
+    {
+      "name": "Caisson",
+      "group": null,
+      "size": [2.6, 3.2, 1.7],
+      "position": [0, 2.0, 0],
+      "color": [180, 62, 54],
+      "material": "SmoothPlastic",
+      "transparency": 0,
+      "collide": true,
+      "fidelity": "Box",
+      "render": "Automatic",
+      "tris": 4180,
+      "verts": 2210
+    },
+    {
+      "name": "Vitre",
+      "group": null,
+      "size": [1.9, 1.4, 0.08],
+      "position": [0, 2.9, -0.86],
+      "color": [200, 226, 240],
+      "material": "Glass",
+      "transparency": 0.6,
+      "collide": false,
+      "fidelity": "Box",
+      "render": "Precise",
+      "tris": 96,
+      "verts": 60
+    },
+    {
+      "name": "Capot",
+      "group": "Capot",
+      "size": [2.6, 0.5, 1.7],
+      "position": [0, 3.9, 0],
+      "color": [232, 196, 88],
+      "material": "SmoothPlastic",
+      "transparency": 0,
+      "collide": true,
+      "fidelity": "Hull",
+      "render": "Automatic",
+      "tris": 1440,
+      "verts": 790
+    },
+    {
+      "name": "Enseigne",
+      "group": "Capot",
+      "size": [1.6, 0.34, 0.1],
+      "position": [0, 4.05, -0.8],
+      "color": [255, 240, 160],
+      "material": "Neon",
+      "transparency": 0,
+      "collide": false,
+      "fidelity": "Box",
+      "render": "Precise",
+      "tris": 210,
+      "verts": 128
+    }
+  ],
+  "animations": [
+    {
+      "name": "Ouvrir",
+      "duration": 1.1,
+      "loop": false,
+      "tracks": [
+        {
+          "target": "Capot",
+          "pivot": [0, 3.9, 0.85],
+          "keyframes": [
+            { "t": 0, "rotation": [0, 0, 0], "easing": "easeOutBack" },
+            { "t": 1.1, "rotation": [-72, 0, 0] }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

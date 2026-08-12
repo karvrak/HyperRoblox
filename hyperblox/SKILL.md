@@ -41,6 +41,24 @@ hyperblox/<slug>/
 low-poly ne se choisit que si l'utilisateur demande un rendu minimaliste, ou
 pour une créature de meute affichée par dizaines.
 
+### Un troisième mode : passer par Blender
+
+Quand la forme demande de **vraies surfaces** — un galbe continu, un congé
+d'arête, une coque organique — aucun assemblage de Block et de Cylinder ne
+rattrapera un maillage. Le skill **`hyperblox-blender`** modèle alors dans
+Blender (via le MCP Blender), exporte un FBX et un `manifest.json`, et génère un
+`assemble.lua` qui pose les MeshParts avec les tailles, couleurs, groupes et
+**le même player d'animations** que ce pipeline-ci.
+
+Ce qui décide : **est-ce qu'une arête vive est un défaut ?** Une caisse, une
+borne, un lampadaire, un coffre : non — rester ici, c'est cinq fois plus rapide
+à itérer et tout reste recolorable part par part. Un casque, un poisson, une
+aile de voiture, une racine : oui — basculer sur `hyperblox-blender`.
+
+Le coût du détour : Blender doit tourner avec l'addon MCP connecté, et l'import
+du FBX dans Studio est un geste **manuel** (l'Importateur 3D n'est pas
+scriptable). À annoncer avant de s'y engager.
+
 En détaillé, on n'écrit pas le `model.json` à la main (au-delà de ~80 parts,
 plus rien n'est **modifiable** — changer l'angle d'une aile demanderait de
 recalculer trente positions, donc on ne le fait pas, donc le modèle se fige
@@ -295,3 +313,6 @@ Logique de décision :
 - Grands ensembles (une zone, une map) : hors périmètre — HyperBlox fait des
   **modèles/props** ; pour le level design, rester sur les scripts de zone
   existants (`generate_zone*.lua`) et le skill `roblox-game`.
+- Formes de base uniquement (pas de MeshPart, pas d'union) : c'est le choix de
+  ce pipeline. Quand il devient le mauvais choix, `hyperblox-blender` prend le
+  relais — voir § Un troisième mode.

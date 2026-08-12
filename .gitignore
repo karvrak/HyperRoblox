@@ -9,5 +9,8 @@ node_modules/
 *.log
 *.tmp
 
+# sauvegardes automatiques de Blender
+*.blend1
+
 # secret local (cle API generation d'images)
 hyperblox/config.json
