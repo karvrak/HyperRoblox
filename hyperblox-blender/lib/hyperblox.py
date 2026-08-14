@@ -3,9 +3,11 @@
 Ce module se charge DANS Blender (via le MCP `execute_blender_code`). Il fait
 trois choses, et rien d'autre :
 
-  1. un vocabulaire de formes paramétriques (boite, cylindre, revolution, tube…)
-     et de modificateurs (biseau, lisser, miroir, booleen…) — l'équivalent de
-     `hyperblox/lib/volume.mjs`, mais avec un vrai moteur de mesh dessous ;
+  1. un vocabulaire de formes paramétriques (boite, cylindre, revolution, tube…),
+     de modificateurs (biseau, lisser, miroir, booleen…) et d'outils ORGANIQUES
+     (squelette, loft, corne, sculpter, fusionner, facetter — la méthode :
+     references/organique.md) — l'équivalent de `hyperblox/lib/volume.mjs`,
+     mais avec un vrai moteur de mesh dessous ;
   2. la déclaration des PIÈCES : chaque pièce deviendra exactement une MeshPart
      dans Roblox, avec sa couleur, son matériau, son groupe ;
   3. l'export : un FBX multi-objets + un `manifest.json` qui mesure tout en
@@ -377,6 +379,280 @@ def deformer(obj, methode="BEND", angle=45, axe="Z"):
     m.deform_method = methode
     m.angle = math.radians(angle)
     m.deform_axis = axe.upper()
+    return obj
+
+
+# ==========================================================================
+#  organique  (créatures, monstres — la méthode : references/organique.md)
+# ==========================================================================
+
+def squelette(nom, os, lissage_branches=0.6, subdivisions=2):
+    """Corps organique par squelette gonflé (modificateur Skin).
+
+    `os` : liste de chaînes ; un point = (x, y, z, rayon). Deux chaînes se
+    SOUDENT quand elles partagent un point aux mêmes coordonnées — c'est comme
+    ça qu'une patte s'attache à une colonne vertébrale :
+
+        hb.squelette("Membres", [
+            [(0, -1.6, 3.0, .5), (0, 0.0, 3.1, .55), (0, 1.2, 3.2, .45)],   # colonne
+            [(0, 1.2, 3.2, .45), (0, 1.8, 4.6, .28)],                       # cou (soudé)
+            [(.4, 1.0, 3.0, .18), (.42, 1.0, 1.6, .11), (.42, 1.0, .4, .09)],  # patte
+        ])
+
+    Le résultat est UNE surface continue : les jonctions sont fondues par le
+    modificateur, pas des sphères qui s'intersectent. Enchaîner avec
+    `fusionner()` (voxel) pour souder au reste du corps, `sculpter()` pour les
+    volumes, `facetter()` pour le style.
+    """
+    verts, aretes = [], []
+    index, rayons = {}, []
+    for chaine in os:
+        if len(chaine) < 2:
+            raise ValueError("squelette : chaque chaîne veut au moins deux points")
+        prec = None
+        for x, y, z, r in chaine:
+            cle = (round(x, 4), round(y, 4), round(z, 4))
+            i = index.get(cle)
+            if i is None:
+                i = len(verts)
+                index[cle] = i
+                verts.append((x, y, z))
+                rayons.append(float(r))
+            else:
+                rayons[i] = max(rayons[i], float(r))   # jonction : le plus épais gagne
+            if prec is not None and prec != i:
+                aretes.append((prec, i))
+            prec = i
+    aretes = sorted({tuple(sorted(a)) for a in aretes})
+
+    # une racine par île (le modificateur Skin en veut une) : union-find
+    parent = list(range(len(verts)))
+
+    def _rac(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b in aretes:
+        parent[_rac(a)] = _rac(b)
+    vues, racines = set(), []
+    for i in range(len(verts)):
+        r = _rac(i)
+        if r not in vues:
+            vues.add(r)
+            racines.append(i)
+
+    me = bpy.data.meshes.new(nom)
+    me.from_pydata(verts, aretes, [])
+    obj = _obj(nom, me)
+
+    # la couche de données « skin » n'existe pas tant qu'on ne la crée pas
+    b2 = bmesh.new()
+    b2.from_mesh(me)
+    b2.verts.layers.skin.verify()
+    b2.to_mesh(me)
+    b2.free()
+    donnees = me.skin_vertices[0].data
+    for i, r in enumerate(rayons):
+        donnees[i].radius = (r, r)
+    for i in racines:
+        donnees[i].use_root = True
+
+    m = obj.modifiers.new("Peau", "SKIN")
+    m.branch_smoothing = lissage_branches
+    m.use_smooth_shade = True
+    if subdivisions:
+        subdiv(obj, subdivisions)
+    return obj
+
+
+def loft(nom, sections, segments=24, fermer=True):
+    """Volume par sections — LE torse organique contrôlé.
+
+    `sections` : liste de (centre, rayon) ou (centre, rayon_x, rayon_z),
+    parcourue d'un bout à l'autre (croupe → poitrail, crâne → museau…). Chaque
+    section est une ellipse posée perpendiculairement au chemin ; le volume les
+    relie en une surface continue. Là où `revolution()` tourne autour d'un axe,
+    `loft()` suit un chemin et change de galbe en route :
+
+        hb.loft("Torse", [
+            ((0, -1.8, 3.1), 0.42, 0.52),   # croupe
+            ((0, -0.2, 3.1), 0.48, 0.60),   # taille (plus étroite)
+            ((0,  0.7, 3.2), 0.58, 0.75),   # poitrail (le plus large)
+            ((0,  1.3, 3.3), 0.42, 0.58),   # épaules
+        ])
+
+    Écraser `rayon_z` (`rx >> rz`) donne une forme plate : oreille, aile,
+    nageoire, langue.
+    """
+    pts = []
+    for s in sections:
+        c = Vector(s[0])
+        rx = float(s[1])
+        rz = float(s[2]) if len(s) > 2 else rx
+        pts.append((c, rx, rz))
+    if len(pts) < 2:
+        raise ValueError("loft : au moins deux sections")
+
+    n = len(pts)
+    bm = bmesh.new()
+    anneaux = []
+    for i, (c, rx, rz) in enumerate(pts):
+        t = pts[min(n - 1, i + 1)][0] - pts[max(0, i - 1)][0]
+        t = t.normalized() if t.length > 1e-9 else Vector((0, 1, 0))
+        ref = Vector((0, 0, 1)) if abs(t.z) < 0.95 else Vector((0, 1, 0))
+        cote = t.cross(ref).normalized()
+        haut = cote.cross(t).normalized()
+        anneau = []
+        for k in range(segments):
+            a = 2 * math.pi * k / segments
+            anneau.append(bm.verts.new(
+                c + cote * (rx * math.cos(a)) + haut * (rz * math.sin(a))))
+        anneaux.append(anneau)
+    for i in range(n - 1):
+        bas, haut_ = anneaux[i], anneaux[i + 1]
+        for k in range(segments):
+            k2 = (k + 1) % segments
+            bm.faces.new((bas[k], bas[k2], haut_[k2], haut_[k]))
+    if fermer:
+        for anneau, c in ((anneaux[0], pts[0][0]), (anneaux[-1], pts[-1][0])):
+            pole = bm.verts.new(c)
+            for k in range(segments):
+                bm.faces.new((anneau[k], anneau[(k + 1) % segments], pole))
+    bm.normal_update()
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return lisser(_obj(nom, _bm_vers_mesh(bm, nom)))
+
+
+def corne(nom, points, rayon, pointe=0.0, rayons=None, segments=12, resolution=8):
+    """Fuseau effilé le long d'un chemin — corne, bois de cerf, mèche de
+    crinière, plume de queue, griffe, croc, petite branche.
+
+    Le rayon file de `rayon` à `pointe` (0 = pointe vive) le long du chemin, ou
+    suit `rayons` point par point s'il est donné. Un bois ramifié = une corne
+    maîtresse + une corne par branche qui DÉMARRE sur un point de la maîtresse,
+    puis un seul `fusionner()` (sans voxel) pour en faire une pièce.
+    """
+    if len(points) < 2:
+        raise ValueError("corne : au moins deux points")
+    if rayons is None:
+        n = len(points)
+        rayons = [pointe + (rayon - pointe) * (1 - i / (n - 1)) for i in range(n)]
+    cu = bpy.data.curves.new(nom, "CURVE")
+    cu.dimensions = "3D"
+    cu.resolution_u = resolution
+    cu.bevel_depth = 1.0                    # le rayon vit sur les points
+    cu.bevel_resolution = max(1, segments // 4 - 1)
+    cu.use_fill_caps = True
+    sp = cu.splines.new("BEZIER")
+    sp.bezier_points.add(len(points) - 1)
+    for bp, p, r in zip(sp.bezier_points, points, rayons):
+        bp.co = Vector(p)
+        bp.radius = max(0.0, float(r))
+        bp.handle_left_type = bp.handle_right_type = "AUTO"
+    return _lier(bpy.data.objects.new(nom, cu))
+
+
+def sculpter(obj, centre, rayon, vecteur=(0, 0, 0), gonfle=0.0):
+    """Le coup de pouce du sculpteur : déplace en douceur ce qui tombe dans la
+    sphère d'influence — bomber un poitrail (`gonfle` > 0), creuser une taille
+    (`gonfle` < 0), tirer un museau (`vecteur`). Falloff lisse : aucune marche.
+
+        hb.sculpter(corps, centre=(0, 0.9, 3.0), rayon=1.0, gonfle=0.15)
+
+    S'applique au MESH DE BASE : sur un objet fusionné, le remesh repasse
+    derrière et la surface reste propre. Sur un `squelette()`, c'est le
+    squelette qui bouge (utile pour poser une patte), mais `gonfle` n'y a pas
+    de sens — passer par les rayons.
+    """
+    me = obj.data
+    if not hasattr(me, "vertices"):
+        raise ValueError("sculpter : il faut un mesh (une corne se fusionne d'abord)")
+    inv = obj.matrix_world.inverted()
+    c = inv @ Vector(centre)
+    vec = inv.to_3x3() @ Vector(vecteur)
+    r2 = float(rayon)
+    for v in me.vertices:
+        d = (v.co - c).length
+        if d >= r2:
+            continue
+        t = 1.0 - d / r2
+        f = t * t * (3.0 - 2.0 * t)          # smoothstep
+        v.co += vec * f + v.normal * (gonfle * f)
+    me.update()
+    return obj
+
+
+def fusionner(nom, objets, voxel=None, lissage=10, garder=False):
+    """Fusionne plusieurs objets en UN seul mesh (modificateurs appliqués, les
+    ingrédients quittent la scène sauf `garder=True`).
+
+    Sans `voxel` : simple assemblage — réunir quatre sabots, huit mèches, un
+    bois ramifié en une seule pièce.
+
+    Avec `voxel` (en studs, p.ex. 0.12) : fusion ORGANIQUE — les surfaces sont
+    refondues en une seule peau continue (remesh voxel + détente) et les
+    jointures disparaissent. C'est CE QUI SÉPARE une créature d'un bonhomme de
+    neige : sphère + cylindre + sphère montre trois objets, la fusion montre un
+    corps. ⚠ tout détail plus fin que `voxel` fond ou disparaît : les oreilles
+    et les mèches restent DEHORS. Choix du voxel : references/organique.md.
+    """
+    if not objets:
+        raise ValueError("fusionner : aucun objet")
+    bm = bmesh.new()
+    for o in objets:
+        me, _ = _mesh_evalue(o)
+        me.transform(o.matrix_world)
+        if o.matrix_world.determinant() < 0:
+            me.flip_normals()
+        bm.from_mesh(me)
+        bpy.data.meshes.remove(me)
+    obj = _obj(nom, _bm_vers_mesh(bm, nom))
+    if not garder:
+        for o in objets:
+            bpy.data.objects.remove(o, do_unlink=True)
+    if voxel:
+        m = obj.modifiers.new("Fusion", "REMESH")
+        m.mode = "VOXEL"
+        m.voxel_size = float(voxel)
+        m.use_smooth_shade = True
+        s = obj.modifiers.new("Detente", "SMOOTH")
+        s.factor = 1.0
+        s.iterations = int(lissage)
+    return obj
+
+
+def facetter(obj, cible=3000):
+    """Le fini « low-poly stylisé » des créatures d'anime Roblox : réduit le
+    maillage vers `cible` triangles et passe l'ombrage à PLAT. Les facettes
+    deviennent un choix graphique, plus un défaut de modélisation.
+
+    À appliquer en DERNIER, une fois la forme validée — sculpter après coup
+    marche (les modificateurs rejouent), mais se juge sur un maillage qui
+    n'est plus celui qu'on livre. Pour un fini lisse, `lisser()` et ne pas
+    décimer.
+    """
+    if obj.type != "MESH":
+        raise ValueError("facetter : il faut un mesh — fusionner les courbes d'abord")
+    m = _mesures(obj)
+    if m is not None:
+        me, i = m
+        bpy.data.meshes.remove(me)
+        if i["tris"] > cible:
+            d = obj.modifiers.new("Facettes", "DECIMATE")
+            d.ratio = max(0.005, cible / float(i["tris"]))
+            d.use_collapse_triangulate = True
+    for mod in list(obj.modifiers):
+        if mod.type in {"REMESH", "SKIN"}:
+            mod.use_smooth_shade = False
+        if mod.name == "Lissage":                 # posé par lisser() en Blender 4.1+
+            obj.modifiers.remove(mod)
+    me = obj.data
+    for p in me.polygons:
+        p.use_smooth = False
+    if hasattr(me, "use_auto_smooth"):
+        me.use_auto_smooth = False
     return obj
 
 

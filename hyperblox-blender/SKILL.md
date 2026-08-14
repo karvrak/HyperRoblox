@@ -80,6 +80,10 @@ en espérant qu'il passe.
 - `references/blender-python.md` — le vocabulaire de `lib/hyperblox.py` et les
   recettes de modélisation propres (biseau, miroir, révolution, booléen…),
   plus les erreurs classiques de `bpy` en contexte MCP.
+- `references/organique.md` — **obligatoire pour toute créature, monstre ou
+  animal** : la méthode squelette → fusion voxel → sculpture → facettes.
+  L'assemblage de primitives (sphère + cylindres) y est proscrit — il produit
+  un bonhomme de neige, jamais une créature.
 - `../hyperblox/references/animations.md` — **si le modèle doit bouger** : le
   player est le même, le schéma des tracks est le même.
 - `../hyperblox/references/style-detaille.md` § Lire l'image en formes — la

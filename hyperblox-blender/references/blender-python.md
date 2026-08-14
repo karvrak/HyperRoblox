@@ -38,6 +38,9 @@ la dixième exécution empile dix modèles.
 | `revolution(nom, profil, position, segments=32, axe="Z")` | **surface de révolution** |
 | `tube(nom, points, rayon, segments=16)` | tube lissé le long d'un chemin |
 | `plan(nom, (x,y), position, subdivisions=0)` | nappe plate, à courber ensuite |
+| `squelette(nom, os)` | corps organique par squelette gonflé (points + rayons) |
+| `loft(nom, sections, segments=24)` | volume par sections elliptiques le long d'un chemin |
+| `corne(nom, points, rayon, pointe=0)` | fuseau effilé — corne, mèche, griffe, plume |
 
 Tout est construit avec `bmesh`, sans un seul `bpy.ops.mesh.*` : les opérateurs
 dépendent du contexte de l'interface, et le contexte d'un appel MCP n'est pas
@@ -82,6 +85,9 @@ où un empilement de cylindres bout à bout montrerait chaque jointure.
 | `booleen(obj, outil, "DIFFERENCE")` | perce, creuse, découpe |
 | `lisser(obj, angle=40)` | ombrage lisse au-delà d'un angle |
 | `deformer(obj, "BEND", angle, axe)` | courbe une forme droite |
+| `sculpter(obj, centre, rayon, vecteur, gonfle)` | bombe, creuse ou tire une zone, falloff lisse |
+| `fusionner(nom, objets, voxel=None)` | UN mesh ; avec `voxel`, fusion organique (jointures fondues) |
+| `facetter(obj, cible=3000)` | décime vers `cible` triangles + ombrage plat — le fini « anime » |
 
 ### `biseau` : le modificateur qui change tout
 
@@ -146,8 +152,9 @@ correspondance change.
 | une arête adoucie | impossible | `biseau()` |
 | un objet symétrique | `V.miroirX()` | `miroir()` |
 | un trou, une découpe | à contourner | `booleen()` |
+| une créature, un monstre, un animal | impossible proprement | **`organique.md`** — squelette, loft, fusion voxel, facettes |
 
-Les deux dernières lignes sont les vraies raisons de venir ici.
+Les trois dernières lignes sont les vraies raisons de venir ici.
 
 ## Contrôler avant de montrer
 
