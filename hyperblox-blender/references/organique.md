@@ -148,6 +148,36 @@ hb.piece(sabots,   couleur=(38, 38, 44),    materiau="SmoothPlastic")
 pattes), `collision=False` pour tout ce qui dépasse. Palette : deux teintes de
 corps + UN accent Neon, pas plus.
 
+## Articuler — le rig de ce pipeline
+
+Pas d'armature ici : le rig, c'est le DÉCOUPAGE. Une créature qui doit marcher,
+remuer la queue ou tourner la tête ne se fusionne pas en un bloc — chaque
+segment mobile est sa propre fusion, dans son propre **groupe**, et le player
+anime les groupes autour de pivots d'articulation :
+
+```
+Corps            torse seul (+ marques)
+Tete             cou + crâne fusionnés, avec crinière, bois, yeux, oreilles
+PatteAvG/…       jambe (squelette) + son sabot — le sabot SUIT sa jambe
+Queue            le panache, articulé à la croupe
+```
+
+Trois règles :
+
+1. **la rotule plonge dans le parent** — la boule de cuisse (rayon 0.35-0.45)
+   s'enfouit dans le ventre, la base du cou dans les épaules : la jointure
+   reste couverte à tous les angles d'animation. C'est le look segmenté des
+   créatures Roblox pro — regarder leurs pattes : les segments SE VOIENT ;
+2. **le pivot d'anim = le centre de la rotule enfouie** ;
+3. **un transform du corps entier = la même track sur chaque segment**, même
+   pivot partagé (écrire un petit helper `tous()` dans le générateur). Les
+   tracks se composent : `Cabrer` = corps entier qui pivote sur les sabots
+   arrière × pattes avant qui se replient.
+
+La marche type : diagonales opposées (AvG+ArD contre AvD+ArG) en rotation X
+±16° autour des hanches, corps qui rebondit à double fréquence, queue en
+balancier Y, tête qui acquiesce. Sur place — le déplacement appartient au jeu.
+
 ## Les pièges
 
 - **Sculpter après facetter** — l'ordre est forme → volumes → style. Ça ne casse
