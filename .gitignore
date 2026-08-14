@@ -9,8 +9,13 @@ node_modules/
 *.log
 *.tmp
 
-# sauvegardes automatiques de Blender
+# sorties générées par les générateurs Blender (le gen-*.py est la source de vérité)
+*.blend
 *.blend1
+*.fbx
+hyperblox-blender/examples/*/manifest.json
+hyperblox-blender/examples/*/assemble.lua
+__pycache__/
 
 # secret local (cle API generation d'images)
 hyperblox/config.json

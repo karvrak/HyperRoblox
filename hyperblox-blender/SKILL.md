@@ -150,7 +150,8 @@ LIB = r"<chemin absolu>/.claude/skills/hyperblox-blender/lib"
 if LIB not in sys.path: sys.path.insert(0, LIB)
 import hyperblox as hb; importlib.reload(hb)
 GEN = r"D:/mon-jeu/hyperblox/casque-garde/gen-casque-garde.py"
-exec(compile(open(GEN, encoding="utf-8").read(), GEN, "exec"))
+g = {"__file__": GEN, "__name__": "__main__"}   # sans __file__, tout générateur qui fait dirname(__file__) explose
+exec(compile(open(GEN, encoding="utf-8").read(), GEN, "exec"), g)
 ```
 
 `importlib.reload(hb)` n'est pas décoratif : sans lui, Blender garde en mémoire

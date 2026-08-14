@@ -10,7 +10,8 @@ animation — sans dépasser quelques milliers de triangles.
     if LIB not in sys.path: sys.path.insert(0, LIB)
     import hyperblox as hb; importlib.reload(hb)
     GEN = r"<...>/hyperblox-blender/examples/borne-arcade/gen-borne-arcade.py"
-    exec(compile(open(GEN, encoding="utf-8").read(), GEN, "exec"))
+    g = {"__file__": GEN, "__name__": "__main__"}
+    exec(compile(open(GEN, encoding="utf-8").read(), GEN, "exec"), g)
 
 Repère Blender : Z en haut. La borne regarde vers **+Y**, ce qui la fera
 regarder vers -Z (l'avant) dans Roblox.
